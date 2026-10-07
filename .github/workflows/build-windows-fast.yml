@@ -1,0 +1,26 @@
+name: 'Build Windows release (fast)'
+# Only the Windows release DLL (what the Fold 7 bundle ships), for quick test turnaround. The full Linux & Windows
+# build (build-linux-windows.yml) still runs before a release.
+on:
+  push:
+    branches: [touch-ui]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Build
+        run: buildscripts/windows/build-releaseonly-from-docker.sh
+        env:
+          HS_BUILD_BRANCH: ${{ github.head_ref || github.ref_name }}
+          HS_BUILD_HASH: ${{ github.sha }}
+
+      - name: Store output
+        uses: actions/upload-artifact@v7
+        with:
+          name: hyperspace-binary
+          path: build-windows-release/Hyperspace.dll
