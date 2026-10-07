@@ -277,13 +277,16 @@ namespace
     // The doors box (the subsystem with the open/close all doors buttons) is drawn bigger again inside the
     // subsystems row, grown up and to the right from just left of its icon.
     DoorBox *lastDoorBox = nullptr;
+    const float DOOR_FRAME_SHIFT_Y = 382.f; // measured: box frame y + this = game y (for the test harness)
 
     bool DoorAnchor(DoorBox *box, float &ax, float &ay)
     {
         if (box == nullptr) return false;
         // The buttons' hitboxes are relative to buttonOffset (DoorBox::MouseMove tests the mouse minus it).
         ax = (float)(box->buttonOffset.x + (std::min)(box->openDoors.hitbox.x, box->closeDoors.hitbox.x)) - 25.f;
-        ay = 700.f;
+        // SystemControl draws (and feeds the mouse to) the subsystem boxes in a frame offset by about
+        // DOOR_FRAME_SHIFT_Y; the box ends about 75 below its buttons' top there.
+        ay = (float)(box->buttonOffset.y + (std::min)(box->openDoors.hitbox.y, box->closeDoors.hitbox.y)) + 75.f;
         // Only where the subsystems are: anything else means the layout is not what this expects; leave it alone.
         return ax >= BOTTOM_RIGHT_LEFT && ax < 1280.f;
     }
@@ -613,6 +616,7 @@ bool FoldLayoutToWindow(const std::string &region, float x, float y, int &window
             if (region == "door" && TwoRowBottom(app) && DoorAnchor(lastDoorBox, dx, dy))
             {
                 // A point of the doors box: enlarged inside the subsystems group.
+                dy += DOOR_FRAME_SHIFT_Y;
                 x = dx + DOOR_BUTTON_SCALE * (x - dx);
                 y = dy + DOOR_BUTTON_SCALE * (y - dy);
             }
