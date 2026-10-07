@@ -36,7 +36,7 @@ namespace
     const int TOP_BAND_BOTTOM = 145;    // hull, shields, evade/O2, resources, FTL/ship/store/options buttons
     const int TOP_BAND_RIGHT = 800;     // the enemy window starts to the right of this
     const int BOTTOM_BAND_TOP = 590;    // system power bars, weapons, drones, subsystems
-    const int BOTTOM_RIGHT_LEFT = 1000; // subsystems and the More Info button sit right of this
+    const int BOTTOM_RIGHT_LEFT = 1020; // subsystems and the More Info button sit right of this
 
     const float MIN_ZOOM = 1.f;
     const float MAX_ZOOM = 2.5f;

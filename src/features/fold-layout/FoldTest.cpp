@@ -130,6 +130,7 @@ namespace
         state["map"] = std::to_string((int)(gui->starMap != nullptr && gui->starMap->bOpen));
         state["choice"] = std::to_string((int)gui->choiceBox.bOpen);
         state["enemy"] = std::to_string((int)(gui->combatControl.currentTarget != nullptr));
+        state["targetbox"] = std::to_string(gui->combatControl.position.x) + "," + std::to_string(gui->combatControl.position.y);
         state["sel"] = std::to_string((int)gui->crewControl.selectedCrew.size());
         state["armed"] = std::to_string(gui->combatControl.weapControl.armedWeapon != nullptr ? gui->combatControl.weapControl.armedSlot : -1);
 
