@@ -184,12 +184,12 @@ namespace
     // On the tall canvas the ships start at 0.9x (pinch zooms from there) to leave room for the big bottom panel.
     float BaseZoom(CApp *app) { return TwoRowBottom(app) ? 0.9f : 1.f; }
 
-    // The highest the world may move: the enemy window's top (game y ~53) stays below the top bar's buttons (which
+    // The highest the world may move: the enemy window's top (game y ~40 with its frame) stays below the top bar's buttons (which
     // end about game y 75 of the top-left group).
     float MaxWorldLift(CApp *app)
     {
         float buttonsBottom = -(float)ExtraY(app) + HudScale(app) * 75.f + 6.f;
-        return (std::min)(0.f, buttonsBottom - 360.f + BaseZoom(app) * (360.f - 53.f));
+        return (std::min)(0.f, buttonsBottom - 360.f + BaseZoom(app) * (360.f - 40.f));
     }
 
     float PanelHeight(CApp *app);
@@ -221,16 +221,40 @@ namespace
         float shipBottom = 360.f + MaxWorldLift(app) + BaseZoom(app) * (525.f - 360.f);
         float room = (float)ExtraY(app) + 720.f - shipBottom - 8.f;
         float fitY = room / ((720.f - SUBSYSTEM_ROW_TOP) + (720.f - BOTTOM_BAND_TOP));
-        float fitX = (1280.f + 2.f * ExtraX(app) - 12.f - 430.f * 1.3f) / (std::max)(WeaponsLeft(app), 1280.f - BOTTOM_RIGHT_LEFT);
-        return (std::max)(1.f, (std::min)(target, (std::min)(fitY, fitX)));
+        // No fit to the width: a ship with many systems scrolls its systems row instead of shrinking it.
+        return (std::max)(1.f, (std::min)(target, fitY));
     }
 
     float PanelHeight(CApp *app) { return BottomScale(app) * ((720.f - SUBSYSTEM_ROW_TOP) + (720.f - BOTTOM_BAND_TOP)); }
 
-    // Right edge of the panel, in canvas x.
-    float PanelRight(CApp *app)
+    // Right edge of the whole panel if nothing were cut, in canvas x.
+    float PanelNaturalRight(CApp *app)
     {
         return -(float)ExtraX(app) + 4.f + BottomScale(app) * (std::max)(WeaponsLeft(app), 1280.f - BOTTOM_RIGHT_LEFT);
+    }
+
+    // Right edge of the panel as shown, in canvas x: the weapons keep at least 1.3x to the right of it.
+    float PanelRight(CApp *app)
+    {
+        float natural = PanelNaturalRight(app);
+        if (!TwoRowBottom(app)) return natural;
+        return (std::min)(natural, 1280.f + (float)ExtraX(app) - 4.f - 12.f - 430.f * 1.3f);
+    }
+
+    // The systems row scrolls sideways (a swipe across it) when it is wider than the panel. Canvas px, >= 0.
+    float systemsScroll = 0.f;
+
+    float MaxSystemsScroll(CApp *app)
+    {
+        if (!TwoRowBottom(app)) return 0.f;
+        float systemsRight = -(float)ExtraX(app) + 4.f + BottomScale(app) * WeaponsLeft(app);
+        return (std::max)(0.f, systemsRight + 6.f - PanelRight(app));
+    }
+
+    float SystemsScroll(CApp *app)
+    {
+        systemsScroll = (std::max)(0.f, (std::min)(systemsScroll, MaxSystemsScroll(app)));
+        return systemsScroll;
     }
 
     // Weapons (and drones) scale and where they start, in canvas x.
@@ -297,7 +321,7 @@ namespace
         case Region::BOTTOM_LEFT:
             if (!panel) return {0.f, 720.f, -ex, 720.f + ey, b};
             // Systems: the upper row of the panel.
-            return {0.f, 720.f, -ex + 4.f, 720.f + ey - b * (720.f - SUBSYSTEM_ROW_TOP), b};
+            return {0.f, 720.f, -ex + 4.f - SystemsScroll(app), 720.f + ey - b * (720.f - SUBSYSTEM_ROW_TOP), b};
         case Region::BOTTOM_RIGHT:
         {
             // Subsystems and More Info: the lower row of the panel.
@@ -958,13 +982,14 @@ int FoldLayoutChoiceOnScreen()
 // For the test harness: where the last input landed, and the view.
 const char *FoldLayoutDescribe()
 {
-    static char text[320];
+    static char text[400];
     static const char *names[] = {"none", "top-left", "bottom-left", "bottom-right", "world", "modal", "weapons", "crew", "drones", "target"};
     CApp *app = G_->GetCApp();
     bool game = app != nullptr && InGame(app);
-    std::snprintf(text, sizeof(text), "region=%s pressRegion=%s zoom=%.2f pan=%.0f,%.0f hudScale=%.2f bottomScale=%.2f modalScale=%.2f twoRow=%d lifted=%d",
+    std::snprintf(text, sizeof(text), "region=%s pressRegion=%s zoom=%.2f pan=%.0f,%.0f hudScale=%.2f bottomScale=%.2f modalScale=%.2f twoRow=%d lifted=%d sysScrollable=%d sysScrolled=%d",
                   names[(int)lastRegion], names[(int)pressRegion], zoom, panX, panY, game ? HudScale(app) : 0.f, game ? BottomScale(app) : 0.f,
-                  game ? ModalScale(app) : 0.f, game ? (int)TwoRowBottom(app) : 0, game ? (int)BottomRightLifted(app) : 0);
+                  game ? ModalScale(app) : 0.f, game ? (int)TwoRowBottom(app) : 0, game ? (int)BottomRightLifted(app) : 0,
+                  game ? (int)(MaxSystemsScroll(app) > 0.f) : 0, game ? (int)(SystemsScroll(app) > 1.f) : 0);
     return text;
 }
 
@@ -1301,9 +1326,10 @@ HOOK_METHOD_PRIORITY(SystemControl, OnRender, -10000, (bool front) -> void)
         Anchor br = GetAnchor(app, Region::BOTTOM_RIGHT);
         GLint split = app->screen_y - (GLint)(app->modifier_y + br.cy - br.s * (720.f - SUBSYSTEM_ROW_TOP));
         Region saved = activeRegion;
-        glScissor(0, split, panelRight, app->screen_y - split);
+        GLint panelLeft = (std::max)(0, (GLint)(app->modifier_x - ExtraX(app)));
+        glScissor(panelLeft, split, panelRight - panelLeft, app->screen_y - split);
         clipActive = true;
-        clipX1 = 0.f;
+        clipX1 = (float)panelLeft;
         clipX2 = (float)panelRight;
         clipY1 = 0.f;
         clipY2 = (float)(app->screen_y - split);
@@ -1312,6 +1338,7 @@ HOOK_METHOD_PRIORITY(SystemControl, OnRender, -10000, (bool front) -> void)
         super(front);
         CSurface::GL_PopMatrix();
         glScissor(0, 0, panelRight, split);
+        clipX1 = 0.f;
         clipY1 = (float)(app->screen_y - split);
         clipY2 = (float)app->screen_y;
         PushRegion(app, Region::BOTTOM_RIGHT);
@@ -1319,8 +1346,22 @@ HOOK_METHOD_PRIORITY(SystemControl, OnRender, -10000, (bool front) -> void)
         super(front);
         CSurface::GL_PopMatrix();
         clipActive = false;
-        activeRegion = saved;
         glDisable(GL_SCISSOR_TEST);
+
+        // A systems row wider than the panel: a scroll bar just under it, in the empty top of the subsystems row
+        // (canvas coordinates).
+        float maxScroll = MaxSystemsScroll(app);
+        if (maxScroll > 0.f)
+        {
+            activeRegion = Region::BOTTOM_LEFT;
+            float left = -(float)ExtraX(app) + 4.f, right = PanelRight(app);
+            float y = br.cy - br.s * (720.f - SUBSYSTEM_ROW_TOP) + 5.f;
+            float track = right - left, visible = track * track / (track + maxScroll);
+            float thumb = left + (track - visible) * (SystemsScroll(app) / maxScroll);
+            CSurface::GL_DrawRect(left, y, track, 4.f, GL_Color(0.35f, 0.4f, 0.45f, 0.6f));
+            CSurface::GL_DrawRect(thumb, y - 1.f, visible, 6.f, GL_Color(0.85f, 0.9f, 0.95f, 0.95f));
+        }
+        activeRegion = saved;
         return;
     }
     float split = app->modifier_x - ExtraX(app) + BottomScale(app) * BOTTOM_RIGHT_LEFT; // window x of the split, left pass
@@ -1425,7 +1466,8 @@ HOOK_METHOD_PRIORITY(InfoBox, OnRender, -10000, () -> void)
     float top, bottom;
     WindowArea(app, top, bottom);
     float ib = (std::min)(a.s, 1.5f);
-    float y = (std::max)(top, a.cy + a.s * (location.y - a.ay));
+    // At the top of the window area: a tall box (a weapon with its stats) placed at the item ran off the bottom.
+    float y = top;
     CSurface::GL_PushMatrix();
     ApplyInverse(app, Region::MODAL);
     CSurface::GL_Translate(-ex + 8.f, y, 0.f);
@@ -1675,9 +1717,32 @@ HOOK_METHOD_PRIORITY(StarMap, MouseClick, -10000, (int x, int y) -> void)
 
 // ---- Input ----
 
+// A press on a scrollable systems row waits for the release: a sideways swipe scrolls the row, anything else is
+// handed to FTL as the tap it was (down and up together), so a swipe never changes a system's power.
+static bool systemsPress = false, systemsSwiping = false, replayingPress = false;
+static int systemsPressX = 0, systemsPressY = 0;
+static float systemsPressScroll = 0.f;
+
 HOOK_METHOD_PRIORITY(CApp, OnMouseMove, -10000, (int x, int y, int xdiff, int ydiff, bool holdingLMB, bool holdingRMB, bool holdingMMB) -> void)
 {
     LOG_HOOK("HOOK_METHOD_PRIORITY -> CApp::OnMouseMove -> Begin (FoldLayout.cpp)\n")
+    if (systemsPress)
+    {
+        if (!holdingLMB)
+        {
+            systemsPress = systemsSwiping = false; // the release never came
+        }
+        else
+        {
+            if (!systemsSwiping && std::abs(x - systemsPressX) > 12) systemsSwiping = true;
+            if (systemsSwiping)
+            {
+                systemsScroll = systemsPressScroll - (float)(x - systemsPressX);
+                SystemsScroll(this);
+            }
+            return;
+        }
+    }
     if (InGame(this) && holdingMMB && mmbPanning)
     {
         // Middle-button drag (two-finger drag on the phone) pans the world.
@@ -1718,8 +1783,18 @@ HOOK_METHOD_PRIORITY(CApp, OnLButtonDown, -10000, (int x, int y) -> void)
         return;
     }
     dragging = false;
+    int rawX = x, rawY = y;
     MapWindowPoint(this, x, y, true);
     pressRegion = lastRegion;
+    if (!replayingPress && lastRegion == Region::BOTTOM_LEFT && InGame(this) && !ModalOpen(gui) && MaxSystemsScroll(this) > 0.f)
+    {
+        systemsPress = true;
+        systemsSwiping = false;
+        systemsPressX = rawX;
+        systemsPressY = rawY;
+        systemsPressScroll = SystemsScroll(this);
+        return;
+    }
     if (InGame(this) && !ModalOpen(gui))
     {
         // Touch: with a weapon (or teleporter, hacking, mind control) armed, FTL only lets go on a right click. A
@@ -1747,6 +1822,17 @@ HOOK_METHOD_PRIORITY(CApp, OnLButtonUp, -10000, (int x, int y) -> void)
     {
         swallowLeftUp = false;
         return;
+    }
+    if (systemsPress)
+    {
+        bool swiped = systemsSwiping;
+        systemsPress = systemsSwiping = false;
+        if (swiped) return; // FTL never saw the press
+
+        // A tap: FTL gets the press where it started, then this release.
+        replayingPress = true;
+        OnLButtonDown(systemsPressX, systemsPressY);
+        replayingPress = false;
     }
     MapWindowPoint(this, x, y);
     dragging = false;
