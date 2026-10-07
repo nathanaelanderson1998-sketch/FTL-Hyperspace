@@ -50,6 +50,7 @@ namespace
     float panX = 0.f;
     float panY = 0.f;
     Region lastRegion = Region::NONE;
+    Region pressRegion = Region::NONE; // where the last button press landed (for the test harness)
     Region dragRegion = Region::NONE;
     bool dragging = false;
     int mmbLastX = 0;
@@ -828,12 +829,12 @@ int FoldLayoutChoiceOnScreen()
 // For the test harness: where the last input landed, and the view.
 const char *FoldLayoutDescribe()
 {
-    static char text[220];
+    static char text[320];
     static const char *names[] = {"none", "top-left", "bottom-left", "bottom-right", "world", "modal", "weapons", "crew", "drones", "target"};
     CApp *app = G_->GetCApp();
     bool game = app != nullptr && InGame(app);
-    std::snprintf(text, sizeof(text), "region=%s zoom=%.2f pan=%.0f,%.0f hudScale=%.2f bottomScale=%.2f modalScale=%.2f twoRow=%d lifted=%d",
-                  names[(int)lastRegion], zoom, panX, panY, game ? HudScale(app) : 0.f, game ? BottomScale(app) : 0.f,
+    std::snprintf(text, sizeof(text), "region=%s pressRegion=%s zoom=%.2f pan=%.0f,%.0f hudScale=%.2f bottomScale=%.2f modalScale=%.2f twoRow=%d lifted=%d",
+                  names[(int)lastRegion], names[(int)pressRegion], zoom, panX, panY, game ? HudScale(app) : 0.f, game ? BottomScale(app) : 0.f,
                   game ? ModalScale(app) : 0.f, game ? (int)TwoRowBottom(app) : 0, game ? (int)BottomRightLifted(app) : 0);
     return text;
 }
@@ -1436,6 +1437,7 @@ HOOK_METHOD_PRIORITY(CApp, OnLButtonDown, -10000, (int x, int y) -> void)
     LOG_HOOK("HOOK_METHOD_PRIORITY -> CApp::OnLButtonDown -> Begin (FoldLayout.cpp)\n")
     dragging = false;
     MapWindowPoint(this, x, y, true);
+    pressRegion = lastRegion;
     super(x, y);
 }
 
@@ -1451,6 +1453,7 @@ HOOK_METHOD_PRIORITY(CApp, OnRButtonDown, -10000, (int x, int y) -> void)
 {
     LOG_HOOK("HOOK_METHOD_PRIORITY -> CApp::OnRButtonDown -> Begin (FoldLayout.cpp)\n")
     MapWindowPoint(this, x, y);
+    pressRegion = lastRegion;
     super(x, y);
 }
 
