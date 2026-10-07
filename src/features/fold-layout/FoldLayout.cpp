@@ -271,6 +271,13 @@ namespace
 
 // ---- Window / clip ----
 
+bool FoldTestCanvas(int &width, int &height); // FoldTest.cpp
+
+void FoldLayoutWheel(CApp *app, int windowX, int windowY, float notches)
+{
+    if (InGame(app) && !ModalOpen(app->gui)) ZoomAt(app, windowX, windowY, std::pow(1.1f, notches));
+}
+
 // FTL_FOLD_LAYOUT=1 (set by the Android launcher) also takes over the display mode: borders mode on the whole
 // desktop. Without this FTL can fall back to a 1280x720 window, e.g. when Wine reports the borderless window as
 // not fullscreen (CApp::UpdateFullScreen then switches the setting back to windowed).
@@ -290,12 +297,27 @@ HOOK_METHOD_PRIORITY(CApp, SetupWindow, -10000, () -> bool)
     if (ForceBordersMode())
     {
         auto settings = Global_Settings_Settings;
-        settings->fullscreen = 2;
-        settings->currentFullscreen = 2;
-        settings->manualResolution = false;
-        settings->manualWindowed = false;
-        settings->manualStretched = false;
-        hs_log_file("Fold layout: forcing fullscreen=2 (borders) on the desktop\n");
+        int testWidth, testHeight;
+        if (FoldTestCanvas(testWidth, testHeight))
+        {
+            // PC testing: a window the size of the phone's canvas (UpdateWindowSettings below draws it unscaled).
+            settings->fullscreen = 0;
+            settings->currentFullscreen = 0;
+            settings->manualResolution = true;
+            settings->manualWindowed = true;
+            settings->manualStretched = false;
+            settings->screenResolution = Point(testWidth, testHeight);
+            hs_log_file("Fold layout: test canvas %dx%d\n", testWidth, testHeight);
+        }
+        else
+        {
+            settings->fullscreen = 2;
+            settings->currentFullscreen = 2;
+            settings->manualResolution = false;
+            settings->manualWindowed = false;
+            settings->manualStretched = false;
+            hs_log_file("Fold layout: forcing fullscreen=2 (borders) on the desktop\n");
+        }
     }
     return super();
 }
@@ -305,6 +327,22 @@ HOOK_METHOD_PRIORITY(CApp, UpdateFullScreen, -10000, () -> void)
     LOG_HOOK("HOOK_METHOD_PRIORITY -> CApp::UpdateFullScreen -> Begin (FoldLayout.cpp)\n")
     if (ForceBordersMode()) return;
     super();
+}
+
+// Whatever window FTL ended up with, draw the game unscaled and centred on it (borders mode's behaviour), so a
+// canvas bigger than 1280x720 is never letterboxed through the framebuffer.
+HOOK_METHOD_PRIORITY(CApp, UpdateWindowSettings, -10000, () -> void)
+{
+    LOG_HOOK("HOOK_METHOD_PRIORITY -> CApp::UpdateWindowSettings -> Begin (FoldLayout.cpp)\n")
+    super();
+    if (!ForceBordersMode() || screen_x < 1280 || screen_y < 720) return;
+    useFrameBuffer = false;
+    x_bar = 0;
+    y_bar = 0;
+    mouseModifier_x = 1.f;
+    mouseModifier_y = 1.f;
+    modifier_x = (screen_x - 1280) / 2;
+    modifier_y = (screen_y - 720) / 2;
 }
 
 HOOK_METHOD_PRIORITY(CApp, OnLoop, -10000, () -> void)
