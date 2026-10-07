@@ -281,9 +281,11 @@ namespace
     bool DoorAnchor(DoorBox *box, float &ax, float &ay)
     {
         if (box == nullptr) return false;
-        ax = (float)(std::min)(box->openDoors.hitbox.x, box->closeDoors.hitbox.x) - 25.f;
+        // The buttons' hitboxes are relative to buttonOffset (DoorBox::MouseMove tests the mouse minus it).
+        ax = (float)(box->buttonOffset.x + (std::min)(box->openDoors.hitbox.x, box->closeDoors.hitbox.x)) - 25.f;
         ay = 700.f;
-        return true;
+        // Only where the subsystems are: anything else means the layout is not what this expects; leave it alone.
+        return ax >= BOTTOM_RIGHT_LEFT && ax < 1280.f;
     }
 
     void ClampView(CApp *app)
