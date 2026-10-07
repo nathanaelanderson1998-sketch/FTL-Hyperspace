@@ -235,6 +235,9 @@ namespace
         float ax, ay, cx, cy, s;
     };
 
+    bool TargetAnchor(CApp *app, float &ax, float &ay, float &scale);
+    Anchor ChoiceAnchor(CApp *app);
+
     Anchor GetAnchor(CApp *app, Region region)
     {
         float ex = (float)ExtraX(app), ey = (float)ExtraY(app), s = HudScale(app), b = BottomScale(app);
@@ -269,7 +272,7 @@ namespace
         case Region::MODAL:
             // The star map window sits right of centre in the 1280x720 layout; centre it on the canvas.
             if (StarMapOpen(app->gui)) return {715.f, 375.f, 640.f, 360.f, ModalScale(app)};
-            if (ChoiceOpen(app->gui)) return {640.f, 360.f, 640.f, 360.f, ModalScale(app)};
+            if (ChoiceOpen(app->gui)) return ChoiceAnchor(app);
             return {635.f, 338.f, 640.f, 360.f, ModalScale(app)}; // store, ship screens, pause menu
         default: return {0.f, 0.f, 0.f, 0.f, 1.f};
         }
@@ -317,6 +320,43 @@ namespace
         ay = (float)(combat.position.y + combat.boxPosition.y);
         scale = 1.2f;
         return true;
+    }
+
+    // Event boxes: a centred one is scaled around the canvas centre. One FTL puts at the side (a ship hailing you,
+    // with its window on the right) stays at the left edge, scaled to fit beside the enemy window.
+    Anchor ChoiceAnchor(CApp *app)
+    {
+        float s = ModalScale(app);
+        ChoiceBox &choice = app->gui->choiceBox;
+        if (choice.box == nullptr || choice.box->rect.w <= 0 || choice.box->rect.h <= 0) return {640.f, 360.f, 640.f, 360.f, s};
+        float w = (float)choice.box->rect.w, h = (float)choice.box->rect.h;
+        float left = (float)choice.position.x, top = (float)choice.position.y;
+        static int logged = 0;
+        if (logged < 4)
+        {
+            logged++;
+            hs_log_file("Fold layout: event box position %d,%d frame %d,%d %dx%d centered %d\n", choice.position.x, choice.position.y,
+                        choice.box->rect.x, choice.box->rect.y, choice.box->rect.w, choice.box->rect.h, (int)choice.centered);
+        }
+        float ex = (float)ExtraX(app), ey = (float)ExtraY(app);
+        s = (std::min)(s, (720.f + 2.f * ey - 16.f) / h);
+        if (choice.centered || std::fabs(left + w / 2.f - 640.f) < 60.f)
+        {
+            s = (std::min)(s, (1280.f + 2.f * ex - 16.f) / w);
+            return {left + w / 2.f, top + h / 2.f, 640.f, 360.f, s};
+        }
+        // Room left of the enemy window, wherever it is drawn now.
+        float room = 1280.f + 2.f * ex - 16.f;
+        float ax, ay, t;
+        if (TargetAnchor(app, ax, ay, t))
+        {
+            Point size = app->gui->combatControl.GetHostileBoxSize();
+            float boxLeft = ax - t * size.x;
+            float canvasLeft = 640.f + panX + zoom * (boxLeft - 640.f);
+            room = canvasLeft + ex - 16.f;
+        }
+        s = (std::min)(s, (std::max)(1.3f, room / w));
+        return {left, top + h / 2.f, -ex + 8.f, 360.f, s};
     }
 
     bool InsideTargetBox(CApp *app, float x, float y)
@@ -739,6 +779,20 @@ bool FoldLayoutToWindow(const std::string &region, float x, float y, int &window
     windowX = (int)std::lround(cx) + app->modifier_x;
     windowY = (int)std::lround(cy) + app->modifier_y;
     return true;
+}
+
+// For the test harness: whether the open event box is drawn wholly on the canvas (-1 when none is open).
+int FoldLayoutChoiceOnScreen()
+{
+    CApp *app = G_->GetCApp();
+    if (app == nullptr || !InGame(app) || !ChoiceOpen(app->gui) || app->gui->choiceBox.box == nullptr) return -1;
+    if (!ScaledModalOpen(app->gui)) return 1;
+    Anchor a = GetAnchor(app, Region::MODAL);
+    ChoiceBox &choice = app->gui->choiceBox;
+    float left = a.cx + a.s * (choice.position.x - a.ax), right = left + a.s * choice.box->rect.w;
+    float top = a.cy + a.s * (choice.position.y - a.ay), bottom = top + a.s * choice.box->rect.h;
+    float ex = (float)ExtraX(app), ey = (float)ExtraY(app);
+    return left >= -ex - 1.f && right <= 1280.f + ex + 1.f && top >= -ey - 1.f && bottom <= 720.f + ey + 1.f;
 }
 
 // For the test harness: where the last input landed, and the view.
@@ -1349,6 +1403,7 @@ HOOK_METHOD_PRIORITY(CApp, OnRButtonUp, -10000, (int x, int y) -> void)
 #else
 
 bool FoldLayoutPushTopLeftToBottomRight() { return false; }
+int FoldLayoutChoiceOnScreen() { return -1; }
 void FoldLayoutPopMatrix() {}
 const char *FoldLayoutDescribe() { return ""; }
 
