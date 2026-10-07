@@ -773,8 +773,7 @@ static Region ModalWindowRegion()
 
 HOOK_METHOD_PRIORITY(TabbedWindow, OnRender, -10000, () -> void)
 {
-    LOG_HOOK("HOOK_METHOD_PRIORITY -> TabbedWindow::OnRender -> Begin (FoldLayout.cpp)
-")
+    LOG_HOOK("HOOK_METHOD_PRIORITY -> TabbedWindow::OnRender -> Begin (FoldLayout.cpp)\n")
     RegionScope scope(ModalWindowRegion(), modalWindowDepth == 0);
     modalWindowDepth++;
     super();
@@ -783,8 +782,7 @@ HOOK_METHOD_PRIORITY(TabbedWindow, OnRender, -10000, () -> void)
 
 HOOK_METHOD_PRIORITY(MenuScreen, OnRender, -10000, () -> void)
 {
-    LOG_HOOK("HOOK_METHOD_PRIORITY -> MenuScreen::OnRender -> Begin (FoldLayout.cpp)
-")
+    LOG_HOOK("HOOK_METHOD_PRIORITY -> MenuScreen::OnRender -> Begin (FoldLayout.cpp)\n")
     RegionScope scope(ModalWindowRegion(), modalWindowDepth == 0);
     modalWindowDepth++;
     super();
