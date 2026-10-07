@@ -87,19 +87,29 @@ namespace
         return false;
     }
 
-    // The windows that get scaled up (the store/upgrade/crew screens are already wide and stay 1:1).
+    // The windows that get scaled up: the star map, event boxes, the store and ship screens (upgrades, crew,
+    // cargo) and the pause menu. The options and controls screens already fill the game and stay 1:1.
     bool StarMapOpen(CommandGui *gui) { return gui->starMap != nullptr && gui->starMap->bOpen; }
     bool ChoiceOpen(CommandGui *gui) { return gui->choiceBox.bOpen; }
 
+    bool ScaledWindow(CommandGui *gui, FocusWindow *window)
+    {
+        return window == (FocusWindow *)gui->starMap || window == (FocusWindow *)&gui->choiceBox || window == (FocusWindow *)&gui->shipScreens ||
+               window == (FocusWindow *)&gui->storeScreens || window == (FocusWindow *)&gui->menuBox;
+    }
+
     bool ScaledModalOpen(CommandGui *gui)
     {
-        if (gui->gameover || (!StarMapOpen(gui) && !ChoiceOpen(gui))) return false;
-        // Any other window open with them (menu, options, store...) keeps 1:1 input.
+        if (gui->gameover) return false;
+        bool any = ChoiceOpen(gui);
         for (auto window : gui->focusWindows)
         {
-            if (window != nullptr && window->bOpen && window != (FocusWindow *)gui->starMap && window != (FocusWindow *)&gui->choiceBox) return false;
+            if (window == nullptr || !window->bOpen) continue;
+            // Any other window open with them (options, controls...) keeps 1:1 input.
+            if (!ScaledWindow(gui, window)) return false;
+            any = true;
         }
-        return true;
+        return any;
     }
 
     int ExtraX(CApp *app) { return app->modifier_x; }
@@ -118,9 +128,15 @@ namespace
         return (std::max)(1.f, (std::min)(1.4f, scale));
     }
 
-    // The star map window is about 750x580 in game coordinates: let it fill the canvas width.
+    // The star map window is about 750x580 in game coordinates: let it fill the canvas width. The store and ship
+    // screens are about 590x560 and the pause menu smaller: up to twice their size.
     float ModalScale(CApp *app)
     {
+        if (app->gui != nullptr && !StarMapOpen(app->gui) && !ChoiceOpen(app->gui))
+        {
+            float scale = (std::min)((float)(app->screen_x - 24) / 600.f, (float)(app->screen_y - 24) / 570.f);
+            return (std::max)(1.f, (std::min)(2.f, scale));
+        }
         float scale = (std::min)((float)app->screen_x / 760.f, (float)app->screen_y / 600.f);
         return (std::max)(1.f, (std::min)(1.68f, scale));
     }
@@ -199,7 +215,8 @@ namespace
         case Region::MODAL:
             // The star map window sits right of centre in the 1280x720 layout; centre it on the canvas.
             if (StarMapOpen(app->gui)) return {715.f, 375.f, 640.f, 360.f, ModalScale(app)};
-            return {640.f, 360.f, 640.f, 360.f, ModalScale(app)};
+            if (ChoiceOpen(app->gui)) return {640.f, 360.f, 640.f, 360.f, ModalScale(app)};
+            return {635.f, 338.f, 640.f, 360.f, ModalScale(app)}; // store, ship screens, pause menu
         default: return {0.f, 0.f, 0.f, 0.f, 1.f};
         }
     }
@@ -432,21 +449,38 @@ namespace
     }
 
     // Wraps one render call in a region transform while the in-game screen is drawn.
+    // Windows (star map, event box, store...) pass absolute = true: they can be drawn from inside another region's
+    // render (an event box opened by a ship is drawn with the ships), and must not inherit its zoom.
+    Region activeRegion = Region::NONE;
+
     struct RegionScope
     {
         bool pushed = false;
-        RegionScope(Region region)
+        Region saved;
+        RegionScope(Region region, bool absolute = false)
         {
+            saved = activeRegion;
             CApp *app = G_->GetCApp();
-            if (inGuiRender && region != Region::NONE && InGame(app))
+            if (!inGuiRender || !InGame(app)) return;
+            if (absolute && activeRegion != Region::NONE && activeRegion != region)
+            {
+                CSurface::GL_PushMatrix();
+                ApplyInverse(app, activeRegion);
+                if (region != Region::NONE) ApplyTransform(app, region);
+                pushed = true;
+                activeRegion = region;
+            }
+            else if (region != Region::NONE)
             {
                 PushRegion(app, region);
                 pushed = true;
+                activeRegion = region;
             }
         }
         ~RegionScope()
         {
             if (pushed) CSurface::GL_PopMatrix();
+            activeRegion = saved;
         }
     };
 }
@@ -723,15 +757,45 @@ HOOK_METHOD_PRIORITY(StarMap, OnRender, -10000, () -> void)
 {
     LOG_HOOK("HOOK_METHOD_PRIORITY -> StarMap::OnRender -> Begin (FoldLayout.cpp)\n")
     CApp *app = G_->GetCApp();
-    RegionScope scope(app != nullptr && app->gui != nullptr && ScaledModalOpen(app->gui) ? Region::MODAL : Region::NONE);
+    RegionScope scope(app != nullptr && app->gui != nullptr && ScaledModalOpen(app->gui) ? Region::MODAL : Region::NONE, true);
     super();
+}
+
+// The store and ship screens and the pause menu. A window drawn from inside another (a confirm box inside the
+// store) is already in the scaled space.
+static int modalWindowDepth = 0;
+
+static Region ModalWindowRegion()
+{
+    CApp *app = G_->GetCApp();
+    return modalWindowDepth == 0 && app != nullptr && app->gui != nullptr && ScaledModalOpen(app->gui) ? Region::MODAL : Region::NONE;
+}
+
+HOOK_METHOD_PRIORITY(TabbedWindow, OnRender, -10000, () -> void)
+{
+    LOG_HOOK("HOOK_METHOD_PRIORITY -> TabbedWindow::OnRender -> Begin (FoldLayout.cpp)
+")
+    RegionScope scope(ModalWindowRegion(), modalWindowDepth == 0);
+    modalWindowDepth++;
+    super();
+    modalWindowDepth--;
+}
+
+HOOK_METHOD_PRIORITY(MenuScreen, OnRender, -10000, () -> void)
+{
+    LOG_HOOK("HOOK_METHOD_PRIORITY -> MenuScreen::OnRender -> Begin (FoldLayout.cpp)
+")
+    RegionScope scope(ModalWindowRegion(), modalWindowDepth == 0);
+    modalWindowDepth++;
+    super();
+    modalWindowDepth--;
 }
 
 HOOK_METHOD_PRIORITY(ChoiceBox, OnRender, -10000, () -> void)
 {
     LOG_HOOK("HOOK_METHOD_PRIORITY -> ChoiceBox::OnRender -> Begin (FoldLayout.cpp)\n")
     CApp *app = G_->GetCApp();
-    RegionScope scope(app != nullptr && app->gui != nullptr && this == &app->gui->choiceBox && ScaledModalOpen(app->gui) ? Region::MODAL : Region::NONE);
+    RegionScope scope(app != nullptr && app->gui != nullptr && this == &app->gui->choiceBox && ScaledModalOpen(app->gui) ? Region::MODAL : Region::NONE, true);
     super();
 }
 

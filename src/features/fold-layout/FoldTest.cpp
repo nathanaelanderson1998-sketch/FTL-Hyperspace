@@ -131,6 +131,8 @@ namespace
         state["paused"] = std::to_string((int)gui->bPaused);
         state["map"] = std::to_string((int)(gui->starMap != nullptr && gui->starMap->bOpen));
         state["choice"] = std::to_string((int)gui->choiceBox.bOpen);
+        state["store"] = std::to_string((int)gui->storeScreens.bOpen);
+        state["ship"] = std::to_string((int)gui->shipScreens.bOpen);
         state["enemy"] = std::to_string((int)(gui->combatControl.currentTarget != nullptr));
         auto pt = [](const Point &p) { return std::to_string(p.x) + "," + std::to_string(p.y); };
         state["cc_pos"] = pt(gui->combatControl.position);
