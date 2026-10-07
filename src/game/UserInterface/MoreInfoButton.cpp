@@ -4,6 +4,9 @@
 
 static Button* moreInfoButton;
 
+Button *GetMoreInfoButton() { return moreInfoButton; }
+bool FoldLayoutShiftTopLeftToBottomRight(int &dx, int &dy); // features/fold-layout/FoldLayout.cpp
+
 HOOK_METHOD(CommandGui, OnInit, () -> void)
 {
     LOG_HOOK("HOOK_METHOD -> CommandGui::OnInit -> Begin (MoreInfoButton.cpp)\n")
@@ -20,7 +23,18 @@ HOOK_METHOD(ShipStatus, OnRender, () -> void)
     LOG_HOOK("HOOK_METHOD -> ShipStatus::OnRender -> Begin (MoreInfoButton.cpp)\n")
     super();
     if (moreInfoButton)
-    moreInfoButton->OnRender();
+    {
+        // Drawn from the top-left HUD but sits bottom-right: on a big canvas the fold layout pins those to different corners.
+        int dx, dy;
+        bool shifted = FoldLayoutShiftTopLeftToBottomRight(dx, dy);
+        if (shifted)
+        {
+            CSurface::GL_PushMatrix();
+            CSurface::GL_Translate((float)dx, (float)dy, 0.f);
+        }
+        moreInfoButton->OnRender();
+        if (shifted) CSurface::GL_PopMatrix();
+    }
 }
 
 HOOK_METHOD(CommandGui, OnLoop, () -> void)

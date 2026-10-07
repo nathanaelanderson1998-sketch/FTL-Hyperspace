@@ -20,9 +20,11 @@
 //   - remaps mouse input so clicks land on what is drawn under the pointer.
 // Set FTL_FOLD_LAYOUT=0 to turn it off.
 
+Button *GetMoreInfoButton(); // game/UserInterface/MoreInfoButton.cpp
+
 namespace
 {
-    enum class Region { NONE, TOP_LEFT, TOP_RIGHT, BOTTOM_LEFT, WORLD };
+    enum class Region { NONE, TOP_LEFT, TOP_RIGHT, BOTTOM_LEFT, BOTTOM_RIGHT, WORLD };
 
     // HUD bands in the game's own 1280x720 coordinates.
     const int TOP_BAND_BOTTOM = 110;   // hull, shields, resources, FTL button, ship/store/options buttons
@@ -100,6 +102,7 @@ namespace
         case Region::TOP_LEFT: dx = -ExtraX(app); dy = -ExtraY(app); break;
         case Region::TOP_RIGHT: dx = ExtraX(app); dy = -ExtraY(app); break;
         case Region::BOTTOM_LEFT: dx = -ExtraX(app); dy = ExtraY(app); break;
+        case Region::BOTTOM_RIGHT: dx = ExtraX(app); dy = ExtraY(app); break;
         default: break;
         }
     }
@@ -147,6 +150,14 @@ namespace
         }
 
         int dx, dy;
+        Button *moreInfo = GetMoreInfoButton();
+        RegionOffset(app, Region::BOTTOM_RIGHT, dx, dy);
+        if (moreInfo != nullptr && InsideRect(moreInfo->hitbox, x - dx, y - dy))
+        {
+            lastRegion = Region::BOTTOM_RIGHT;
+            return Point(x - dx, y - dy);
+        }
+
         RegionOffset(app, Region::TOP_RIGHT, dx, dy);
         if (InsideRect(gui->optionsButton.hitbox, x - dx, y - dy))
         {
@@ -270,6 +281,16 @@ namespace
 }
 
 // ---- Window / clip ----
+
+// For HUD pieces drawn inside the top-left group that belong in the bottom-right corner (Hyperspace's More Info button).
+bool FoldLayoutShiftTopLeftToBottomRight(int &dx, int &dy)
+{
+    CApp *app = G_->GetCApp();
+    if (!inGuiRender || !InGame(app)) return false;
+    dx = 2 * ExtraX(app);
+    dy = 2 * ExtraY(app);
+    return dx != 0 || dy != 0;
+}
 
 bool FoldTestCanvas(int &width, int &height); // FoldTest.cpp
 
@@ -565,5 +586,9 @@ HOOK_METHOD_PRIORITY(CApp, OnRButtonUp, -10000, (int x, int y) -> void)
     MapWindowPoint(this, x, y);
     super(x, y);
 }
+
+#else
+
+bool FoldLayoutShiftTopLeftToBottomRight(int &dx, int &dy) { return false; }
 
 #endif // _WIN32
