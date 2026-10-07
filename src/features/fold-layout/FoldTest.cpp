@@ -246,7 +246,7 @@ namespace
             // maps real clicks, so the screen point of a ship point is that point minus the offset.
             Point world = gui->GetWorldCoordinates(Point(0, 0), enemy);
             Pointf center = graph->GetRoomCenter(index);
-            return FoldLayoutToWindow("world", center.x - world.x, center.y - world.y, x, y);
+            return FoldLayoutToWindow(enemy ? "target" : "world", center.x - world.x, center.y - world.y, x, y);
         }
         if (first == "crew")
         {
@@ -282,7 +282,7 @@ namespace
             }
             return false;
         }
-        if (first == "tl" || first == "bl" || first == "br" || first == "wp" || first == "cr" || first == "dr" || first == "door" ||
+        if (first == "tl" || first == "bl" || first == "br" || first == "wp" || first == "cr" || first == "dr" || first == "door" || first == "target" || first == "menu" ||
             first == "world" || first == "modal" || first == "none")
         {
             float gx = 0.f, gy = 0.f;

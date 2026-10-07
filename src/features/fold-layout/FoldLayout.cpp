@@ -31,8 +31,9 @@ namespace
     // HUD groups, each pinned to a canvas corner and scaled up around it; WORLD = ships and space (zoom/pan);
     // MODAL = the star map or an event box, scaled up around the canvas centre. On a tall canvas WEAPONS, DRONES
     // (the weapon and drone boxes) and CREW (crew boxes, stations buttons) get places and scales of their own;
-    // otherwise they follow the bottom-left and top-left groups.
-    enum class Region { NONE, TOP_LEFT, BOTTOM_LEFT, BOTTOM_RIGHT, WORLD, MODAL, WEAPONS, CREW, DRONES };
+    // otherwise they follow the bottom-left and top-left groups. TARGET = the enemy window: part of the world (it
+    // zooms with it), enlarged on top of that.
+    enum class Region { NONE, TOP_LEFT, BOTTOM_LEFT, BOTTOM_RIGHT, WORLD, MODAL, WEAPONS, CREW, DRONES, TARGET };
 
     // HUD bands in the game's own 1280x720 coordinates.
     const int TOP_BAND_BOTTOM = 145;    // hull, shields, evade/O2, resources, FTL/ship/store/options buttons
@@ -305,8 +306,39 @@ namespace
         }
     }
 
+    // The enemy window grows left and down from its top-right corner (the right side is the canvas edge).
+    bool TargetAnchor(CApp *app, float &ax, float &ay, float &scale)
+    {
+        if (app->gui == nullptr || app->gui->combatControl.currentTarget == nullptr || !TwoRowBottom(app)) return false;
+        CombatControl &combat = app->gui->combatControl;
+        Point size = combat.GetHostileBoxSize();
+        if (size.x <= 0 || size.y <= 0) return false;
+        ax = (float)(combat.position.x + combat.boxPosition.x + size.x);
+        ay = (float)(combat.position.y + combat.boxPosition.y);
+        scale = 1.2f;
+        return true;
+    }
+
+    bool InsideTargetBox(CApp *app, float x, float y)
+    {
+        CombatControl &combat = app->gui->combatControl;
+        Point size = combat.GetHostileBoxSize();
+        float left = (float)(combat.position.x + combat.boxPosition.x), top = (float)(combat.position.y + combat.boxPosition.y);
+        return x >= left && x < left + size.x && y >= top && y < top + size.y;
+    }
+
     void ApplyTransform(CApp *app, Region region)
     {
+        if (region == Region::TARGET)
+        {
+            ApplyTransform(app, Region::WORLD);
+            float ax, ay, t;
+            if (!TargetAnchor(app, ax, ay, t)) return;
+            CSurface::GL_Translate(ax, ay, 0.f);
+            CSurface::GL_Scale(t, t, 1.f);
+            CSurface::GL_Translate(-ax, -ay, 0.f);
+            return;
+        }
         if (region == Region::WORLD)
         {
             CSurface::GL_Translate(640.f + panX, 360.f + panY + WorldShiftY(app), 0.f);
@@ -323,6 +355,18 @@ namespace
     // Undoes ApplyTransform(region), for drawing in another space from inside a region.
     void ApplyInverse(CApp *app, Region region)
     {
+        if (region == Region::TARGET)
+        {
+            float ax, ay, t;
+            if (TargetAnchor(app, ax, ay, t))
+            {
+                CSurface::GL_Translate(ax, ay, 0.f);
+                CSurface::GL_Scale(1.f / t, 1.f / t, 1.f);
+                CSurface::GL_Translate(-ax, -ay, 0.f);
+            }
+            ApplyInverse(app, Region::WORLD);
+            return;
+        }
         if (region == Region::WORLD)
         {
             CSurface::GL_Translate(640.f, 360.f, 0.f);
@@ -345,6 +389,17 @@ namespace
     // Canvas point (game coordinates) -> the game point drawn there in a region.
     void InverseMap(CApp *app, Region region, float x, float y, float &outX, float &outY)
     {
+        if (region == Region::TARGET)
+        {
+            InverseMap(app, Region::WORLD, x, y, outX, outY);
+            float ax, ay, t;
+            if (TargetAnchor(app, ax, ay, t))
+            {
+                outX = ax + (outX - ax) / t;
+                outY = ay + (outY - ay) / t;
+            }
+            return;
+        }
         if (region == Region::WORLD)
         {
             outX = 640.f + (x - 640.f - panX) / zoom;
@@ -378,6 +433,26 @@ namespace
     }
 
     bool InTopBand(int x, int y) { return y < TOP_BAND_BOTTOM && x < TOP_BAND_RIGHT; }
+
+    // The plain main menu (no hangar, options, stats, credits or dialog over it) on a tall canvas.
+    bool MenuScaled(CApp *app)
+    {
+        if (!LayoutActive(app) || !app->menu.bOpen || app->langChooser.bOpen || app->screen_y <= 760) return false;
+        MainMenu &menu = app->menu;
+        return !menu.shipBuilder.bOpen && !menu.bScoreScreen && !menu.optionScreen.bOpen && !menu.bCreditScreen &&
+               !menu.changelog.bOpen && !menu.confirmNewGame.bOpen && !menu.bSelectSave;
+    }
+
+    struct MenuAnchor
+    {
+        float ax, ay, cx, cy, s;
+    };
+
+    MenuAnchor GetMenuAnchor(CApp *app)
+    {
+        float s = (std::min)(2.f, (float)app->screen_y / 720.f);
+        return {1280.f, 360.f, 1280.f + ExtraX(app), 360.f, s};
+    }
 
     // Which region a canvas point belongs to, and the game point under it.
     Region Classify(CApp *app, float x, float y, float &gx, float &gy)
@@ -435,6 +510,13 @@ namespace
         InverseMap(app, Region::TOP_LEFT, x, y, gx, gy);
         if (InTopBand((int)gx, (int)gy)) return Region::TOP_LEFT;
 
+        float ax, ay, t;
+        if (TargetAnchor(app, ax, ay, t))
+        {
+            InverseMap(app, Region::TARGET, x, y, gx, gy);
+            if (InsideTargetBox(app, gx, gy)) return Region::TARGET;
+        }
+
         InverseMap(app, Region::WORLD, x, y, gx, gy);
         return Region::WORLD;
     }
@@ -473,6 +555,15 @@ namespace
     // Window coordinates in -> window coordinates that FTL's own transform turns into the mapped game point.
     void MapWindowPoint(CApp *app, int &x, int &y, bool startDrag = false)
     {
+        if (MenuScaled(app))
+        {
+            dragging = false;
+            MenuAnchor a = GetMenuAnchor(app);
+            float cx = (float)(x - app->modifier_x), cy = (float)(y - app->modifier_y);
+            x = (int)std::floor(a.ax + (cx - a.cx) / a.s) + app->modifier_x;
+            y = (int)std::floor(a.ay + (cy - a.cy) / a.s) + app->modifier_y;
+            return;
+        }
         if (!InGame(app))
         {
             dragging = false;
@@ -603,7 +694,24 @@ bool FoldLayoutToWindow(const std::string &region, float x, float y, int &window
     CApp *app = G_->GetCApp();
     if (app == nullptr) return false;
     float cx = x, cy = y;
-    if (InGame(app) && region != "none")
+    if (region == "menu" && MenuScaled(app))
+    {
+        MenuAnchor a = GetMenuAnchor(app);
+        cx = a.cx + a.s * (x - a.ax);
+        cy = a.cy + a.s * (y - a.ay);
+    }
+    else if (InGame(app) && region == "target")
+    {
+        float ax, ay, t;
+        if (TargetAnchor(app, ax, ay, t))
+        {
+            x = ax + t * (x - ax);
+            y = ay + t * (y - ay);
+        }
+        cx = 640.f + panX + zoom * (x - 640.f);
+        cy = 360.f + panY + WorldShiftY(app) + zoom * (y - 360.f);
+    }
+    else if (InGame(app) && region != "none" && region != "menu")
     {
         if (region == "world")
         {
@@ -637,7 +745,7 @@ bool FoldLayoutToWindow(const std::string &region, float x, float y, int &window
 const char *FoldLayoutDescribe()
 {
     static char text[220];
-    static const char *names[] = {"none", "top-left", "bottom-left", "bottom-right", "world", "modal", "weapons", "crew", "drones"};
+    static const char *names[] = {"none", "top-left", "bottom-left", "bottom-right", "world", "modal", "weapons", "crew", "drones", "target"};
     CApp *app = G_->GetCApp();
     bool game = app != nullptr && InGame(app);
     std::snprintf(text, sizeof(text), "region=%s zoom=%.2f pan=%.0f,%.0f hudScale=%.2f bottomScale=%.2f modalScale=%.2f twoRow=%d lifted=%d",
@@ -745,6 +853,39 @@ HOOK_METHOD_PRIORITY(CommandGui, RenderStatic, -10000, () -> void)
     inGuiRender = false;
 }
 
+HOOK_METHOD_PRIORITY(MainMenu, OnRender, -10000, () -> void)
+{
+    LOG_HOOK("HOOK_METHOD_PRIORITY -> MainMenu::OnRender -> Begin (FoldLayout.cpp)\n")
+    CApp *app = G_->GetCApp();
+    if (app == nullptr || this != &app->menu || !MenuScaled(app)) return super();
+    MenuAnchor a = GetMenuAnchor(app);
+    CSurface::GL_PushMatrix();
+    CSurface::GL_Translate(a.cx, a.cy, 0.f);
+    CSurface::GL_Scale(a.s, a.s, 1.f);
+    CSurface::GL_Translate(-a.ax, -a.ay, 0.f);
+    super();
+    CSurface::GL_PopMatrix();
+}
+
+// The hangar uses the whole 1280 width, so it stays 1:1; its dock backdrop, scaled to cover the canvas, fills the
+// bands above and below it.
+HOOK_METHOD_PRIORITY(ShipBuilder, OnRender, -10000, () -> void)
+{
+    LOG_HOOK("HOOK_METHOD_PRIORITY -> ShipBuilder::OnRender -> Begin (FoldLayout.cpp)\n")
+    CApp *app = G_->GetCApp();
+    if (LayoutActive(app) && app->screen_y > 760 && baseImage != nullptr)
+    {
+        float scale = (std::max)((float)app->screen_x / 1280.f, (float)app->screen_y / 720.f);
+        CSurface::GL_PushMatrix();
+        CSurface::GL_Translate(640.f, 360.f, 0.f);
+        CSurface::GL_Scale(scale, scale, 1.f);
+        CSurface::GL_Translate(-640.f, -360.f, 0.f);
+        CSurface::GL_RenderPrimitiveWithAlpha(baseImage, 0.55f);
+        CSurface::GL_PopMatrix();
+    }
+    super();
+}
+
 HOOK_METHOD_PRIORITY(SpaceManager, OnRenderBackground, -10000, () -> void)
 {
     LOG_HOOK("HOOK_METHOD_PRIORITY -> SpaceManager::OnRenderBackground -> Begin (FoldLayout.cpp)\n")
@@ -785,7 +926,7 @@ HOOK_METHOD_PRIORITY(CommandGui, RenderPlayerShip, -10000, (Point &shipCenter, f
 HOOK_METHOD_PRIORITY(CombatControl, OnRenderCombat, -10000, () -> void)
 {
     LOG_HOOK("HOOK_METHOD_PRIORITY -> CombatControl::OnRenderCombat -> Begin (FoldLayout.cpp)\n")
-    RegionScope scope(Region::WORLD);
+    RegionScope scope(Region::TARGET);
     super();
 }
 
