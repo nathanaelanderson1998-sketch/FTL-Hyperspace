@@ -1672,6 +1672,18 @@ HOOK_METHOD_PRIORITY(CApp, OnLButtonDown, -10000, (int x, int y) -> void)
     dragging = false;
     MapWindowPoint(this, x, y, true);
     pressRegion = lastRegion;
+    if (InGame(this) && !ModalOpen(gui))
+    {
+        // Touch: with a weapon (or teleporter, hacking, mind control) armed, FTL only lets go on a right click. A
+        // tap anywhere but the enemy window and the weapon boxes cancels the aim, and still reaches what was
+        // tapped (e.g. the jump button). Weapons that can target the player ship can still be aimed at it.
+        CombatControl &combat = gui->combatControl;
+        bool armed = combat.WeaponsArmed() || combat.TeleporterArmed() != 0 || combat.MindControlArmed() != 0 || combat.HackingArmed();
+        bool onEnemy = combat.currentTarget != nullptr && InsideTargetBox(this, (float)(x - modifier_x), (float)(y - modifier_y));
+        bool aiming = lastRegion == Region::TARGET || lastRegion == Region::WEAPONS || lastRegion == Region::DRONES ||
+                      (lastRegion == Region::WORLD && (onEnemy || combat.CanTargetSelf()));
+        if (armed && !aiming) combat.DisarmAll();
+    }
     super(x, y);
 }
 
