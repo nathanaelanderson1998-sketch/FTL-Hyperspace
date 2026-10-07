@@ -19,6 +19,7 @@
 
 const char *FoldLayoutCheckRegion(bool &windowOverBalances); // FoldLayout.cpp: what is being drawn now
 float FoldLayoutBalancesBottom();                             // FoldLayout.cpp: window y below the balances rows
+bool FoldLayoutCheckClip(float &x1, float &y1, float &x2, float &y2); // FoldLayout.cpp: scissor in force
 
 namespace
 {
@@ -85,9 +86,18 @@ namespace
         Box b{ox + m.tx + m.sx * x, oy + m.ty + m.sy * y, ox + m.tx + m.sx * (x + w), oy + m.ty + m.sy * (y + h)};
         if (b.x1 > b.x2) std::swap(b.x1, b.x2);
         if (b.y1 > b.y2) std::swap(b.y1, b.y2);
+        float cx1, cy1, cx2, cy2;
+        if (FoldLayoutCheckClip(cx1, cy1, cx2, cy2))
+        {
+            // Only what the scissor lets through is seen.
+            b = Box{(std::max)(b.x1, cx1), (std::max)(b.y1, cy1), (std::min)(b.x2, cx2), (std::min)(b.y2, cy2)};
+            if (b.x2 <= b.x1 || b.y2 <= b.y1) return;
+        }
+        // The star map clips its own contents (nebulae, the map image) to its window.
+        bool clipsItself = std::string(region) == "star-map";
         // Rounded down to 8 px so one element sliding off a little is one report, not one per frame.
         auto snap = [](float v) { return (float)((int)v / 8 * 8); };
-        if (b.x1 < -2.f || b.y1 < -2.f || b.x2 > app->screen_x + 2.f || b.y2 > app->screen_y + 2.f)
+        if (!clipsItself && (b.x1 < -4.f || b.y1 < -4.f || b.x2 > app->screen_x + 4.f || b.y2 > app->screen_y + 4.f))
         {
             Report("OFFSCREEN", Describe(region, Box{snap(b.x1), snap(b.y1), snap(b.x2), snap(b.y2)}));
         }
@@ -217,21 +227,21 @@ HOOK_STATIC_PRIORITY(CSurface, GL_Scale, 100, (float x, float y, float z) -> voi
 HOOK_STATIC_PRIORITY(CSurface, GL_DrawRect, 100, (float x1, float y1, float x2, float y2, GL_Color color) -> bool)
 {
     LOG_HOOK("HOOK_STATIC_PRIORITY -> CSurface::GL_DrawRect -> Begin (FoldCheck.cpp)\n")
-    Drew(x1, y1, x2, y2);
+    if (color.a > 0.05f) Drew(x1, y1, x2, y2);
     return super(x1, y1, x2, y2, color);
 }
 
 HOOK_STATIC_PRIORITY(CSurface, GL_BlitImage, 100, (GL_Texture *tex, float x, float y, float x2, float y2, float rotation, GL_Color color, bool mirror) -> bool)
 {
     LOG_HOOK("HOOK_STATIC_PRIORITY -> CSurface::GL_BlitImage -> Begin (FoldCheck.cpp)\n")
-    Drew(x, y, x2, y2);
+    if (color.a > 0.05f) Drew(x, y, x2, y2);
     return super(tex, x, y, x2, y2, rotation, color, mirror);
 }
 
 HOOK_STATIC_PRIORITY(CSurface, GL_BlitPixelImage, 100, (GL_Texture *tex, float x, float y, float x2, float y2, float rotation, GL_Color color, bool mirror) -> bool)
 {
     LOG_HOOK("HOOK_STATIC_PRIORITY -> CSurface::GL_BlitPixelImage -> Begin (FoldCheck.cpp)\n")
-    Drew(x, y, x2, y2);
+    if (color.a > 0.05f) Drew(x, y, x2, y2);
     return super(tex, x, y, x2, y2, rotation, color, mirror);
 }
 

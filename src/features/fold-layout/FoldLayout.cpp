@@ -184,8 +184,13 @@ namespace
     // On the tall canvas the ships start at 0.9x (pinch zooms from there) to leave room for the big bottom panel.
     float BaseZoom(CApp *app) { return TwoRowBottom(app) ? 0.9f : 1.f; }
 
-    // The highest the world may move: the enemy window's top (game y ~53) stays below the top bar's buttons.
-    float MaxWorldLift(CApp *app) { return BaseZoom(app) * 307.f - 460.f; }
+    // The highest the world may move: the enemy window's top (game y ~53) stays below the top bar's buttons (which
+    // end about game y 75 of the top-left group).
+    float MaxWorldLift(CApp *app)
+    {
+        float buttonsBottom = -(float)ExtraY(app) + HudScale(app) * 75.f + 6.f;
+        return (std::min)(0.f, buttonsBottom - 360.f + BaseZoom(app) * (360.f - 53.f));
+    }
 
     float PanelHeight(CApp *app);
 
@@ -216,7 +221,8 @@ namespace
         float shipBottom = 360.f + MaxWorldLift(app) + BaseZoom(app) * (525.f - 360.f);
         float room = (float)ExtraY(app) + 720.f - shipBottom - 8.f;
         float fitY = room / ((720.f - SUBSYSTEM_ROW_TOP) + (720.f - BOTTOM_BAND_TOP));
-        return (std::max)(s, (std::min)(target, fitY));
+        float fitX = (1280.f + 2.f * ExtraX(app) - 12.f - 430.f * 1.3f) / (std::max)(WeaponsLeft(app), 1280.f - BOTTOM_RIGHT_LEFT);
+        return (std::max)(1.f, (std::min)(target, (std::min)(fitY, fitX)));
     }
 
     float PanelHeight(CApp *app) { return BottomScale(app) * ((720.f - SUBSYSTEM_ROW_TOP) + (720.f - BOTTOM_BAND_TOP)); }
@@ -379,17 +385,18 @@ namespace
         ChoiceBox &choice = app->gui->choiceBox;
         if (choice.box == nullptr || choice.box->rect.w <= 0 || choice.box->rect.h <= 0) return {640.f, 360.f, 640.f, 360.f, s};
         float w = (float)choice.box->rect.w, h = (float)choice.box->rect.h;
-        float left = (float)choice.position.x, top = (float)choice.position.y;
+        bool beside = app->gui->combatControl.currentTarget != nullptr;
+        float left = (beside ? 167.f : 327.f) + choice.box->rect.x, top = 140.f + choice.box->rect.y;
         static int logged = 0;
         if (logged < 4)
         {
             logged++;
-            hs_log_file("Fold layout: event box position %d,%d frame %d,%d %dx%d centered %d\n", choice.position.x, choice.position.y,
-                        choice.box->rect.x, choice.box->rect.y, choice.box->rect.w, choice.box->rect.h, (int)choice.centered);
+            hs_log_file("Fold layout: event box frame %d,%d %dx%d beside enemy %d\n", choice.box->rect.x, choice.box->rect.y,
+                        choice.box->rect.w, choice.box->rect.h, (int)beside);
         }
         float ex = (float)ExtraX(app), ey = (float)ExtraY(app);
         s = (std::min)(s, (720.f + 2.f * ey - 16.f) / h);
-        if (choice.centered || std::fabs(left + w / 2.f - 640.f) < 60.f)
+        if (!beside)
         {
             s = (std::min)(s, (1280.f + 2.f * ex - 16.f) / w);
             return {left + w / 2.f, top + h / 2.f, 640.f, 360.f, s};
@@ -772,6 +779,9 @@ namespace
     Region activeRegion = Region::NONE;
     bool drawingTooltip = false;
     bool drawingTouchButtons = false;
+    bool drawingCursor = false;
+    bool clipActive = false;          // the panel passes' scissor, in window coordinates (for the draw checker)
+    float clipX1 = 0.f, clipY1 = 0.f, clipX2 = 0.f, clipY2 = 0.f;
 
     struct RegionScope
     {
@@ -893,6 +903,7 @@ const char *FoldLayoutCheckRegion(bool &windowOverBalances)
     CApp *app = G_->GetCApp();
     if (app == nullptr || !InGame(app)) return nullptr;
     if (drawingTooltip) return "tooltip";
+    if (drawingCursor) return nullptr; // the pointer itself (hidden on the phone)
     if (drawingTouchButtons) return "touch-buttons";
     switch (activeRegion)
     {
@@ -908,6 +919,17 @@ const char *FoldLayoutCheckRegion(bool &windowOverBalances)
         return StarMapOpen(app->gui) ? "star-map" : ChoiceOpen(app->gui) ? "event" : "window";
     default: return nullptr;
     }
+}
+
+// For the draw checker: the scissor rectangle in force (window coordinates), if any.
+bool FoldLayoutCheckClip(float &x1, float &y1, float &x2, float &y2)
+{
+    if (!clipActive) return false;
+    x1 = clipX1;
+    y1 = clipY1;
+    x2 = clipX2;
+    y2 = clipY2;
+    return true;
 }
 
 // For the draw checker: window y of the bottom of the hull/scrap/fuel/missiles/drones rows.
@@ -926,8 +948,9 @@ int FoldLayoutChoiceOnScreen()
     if (!ScaledModalOpen(app->gui)) return 1;
     Anchor a = GetAnchor(app, Region::MODAL);
     ChoiceBox &choice = app->gui->choiceBox;
-    float left = a.cx + a.s * (choice.position.x - a.ax), right = left + a.s * choice.box->rect.w;
-    float top = a.cy + a.s * (choice.position.y - a.ay), bottom = top + a.s * choice.box->rect.h;
+    float boxLeft = (app->gui->combatControl.currentTarget != nullptr ? 167.f : 327.f) + choice.box->rect.x, boxTop = 140.f + choice.box->rect.y;
+    float left = a.cx + a.s * (boxLeft - a.ax), right = left + a.s * choice.box->rect.w;
+    float top = a.cy + a.s * (boxTop - a.ay), bottom = top + a.s * choice.box->rect.h;
     float ex = (float)ExtraX(app), ey = (float)ExtraY(app);
     return left >= -ex - 1.f && right <= 1280.f + ex + 1.f && top >= -ey - 1.f && bottom <= 720.f + ey + 1.f;
 }
@@ -1048,13 +1071,28 @@ namespace
         return InGame(app) && TwoRowBottom(app) && !ModalOpen(app->gui);
     }
 
-    // Button 0 = Esc, 1 = Pause, in canvas coordinates.
+    // Button 0 = Esc, 1 = Pause, in canvas coordinates: above the weapons at the right, or with drones (a row
+    // above the weapons), at the right end of that row.
     Globals::Rect TouchButtonRect(CApp *app, int index)
     {
         Anchor w = GetAnchor(app, Region::WEAPONS);
         float bottom = w.cy - w.s * (720.f - BOTTOM_BAND_TOP) - 10.f;
-        float right = 1280.f + ExtraX(app) - 8.f - (1 - index) * (TOUCH_BUTTON_W + TOUCH_BUTTON_GAP);
-        return Globals::Rect({(int)(right - TOUCH_BUTTON_W), (int)(bottom - TOUCH_BUTTON_H), (int)TOUCH_BUTTON_W, (int)TOUCH_BUTTON_H});
+        float width = TOUCH_BUTTON_W, height = TOUCH_BUTTON_H;
+        float rightEdge = 1280.f + ExtraX(app) - 8.f;
+        if (HasDrones(app))
+        {
+            Anchor d = GetAnchor(app, Region::DRONES);
+            float dronesRight = d.cx + d.s * 296.f;
+            width = (std::min)(TOUCH_BUTTON_W, (rightEdge - dronesRight - 8.f - TOUCH_BUTTON_GAP) / 2.f);
+            bottom = d.cy - d.s * 20.f;
+            if (width < 70.f)
+            {
+                width = TOUCH_BUTTON_W;
+                bottom = d.cy - d.s * (720.f - BOTTOM_BAND_TOP + 5.f) - 10.f;
+            }
+        }
+        float right = rightEdge - (1 - index) * (width + TOUCH_BUTTON_GAP);
+        return Globals::Rect({(int)(right - width), (int)(bottom - height), (int)width, (int)height});
     }
 
     int TouchButtonAt(CApp *app, int x, int y)
@@ -1264,15 +1302,23 @@ HOOK_METHOD_PRIORITY(SystemControl, OnRender, -10000, (bool front) -> void)
         GLint split = app->screen_y - (GLint)(app->modifier_y + br.cy - br.s * (720.f - SUBSYSTEM_ROW_TOP));
         Region saved = activeRegion;
         glScissor(0, split, panelRight, app->screen_y - split);
+        clipActive = true;
+        clipX1 = 0.f;
+        clipX2 = (float)panelRight;
+        clipY1 = 0.f;
+        clipY2 = (float)(app->screen_y - split);
         PushRegion(app, Region::BOTTOM_LEFT);
         activeRegion = Region::BOTTOM_LEFT;
         super(front);
         CSurface::GL_PopMatrix();
         glScissor(0, 0, panelRight, split);
+        clipY1 = (float)(app->screen_y - split);
+        clipY2 = (float)app->screen_y;
         PushRegion(app, Region::BOTTOM_RIGHT);
         activeRegion = Region::BOTTOM_RIGHT;
         super(front);
         CSurface::GL_PopMatrix();
+        clipActive = false;
         activeRegion = saved;
         glDisable(GL_SCISSOR_TEST);
         return;
@@ -1493,7 +1539,9 @@ HOOK_METHOD_PRIORITY(MouseControl, OnRender, -10000, () -> void)
     }
     cursorMasked = HideCursor() && app != nullptr && !app->useDirect3D;
     if (cursorMasked) glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
+    drawingCursor = true;
     super();
+    drawingCursor = false;
     if (cursorMasked) glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
     cursorMasked = false;
     activeRegion = saved;
@@ -1682,7 +1730,12 @@ HOOK_METHOD_PRIORITY(CApp, OnLButtonDown, -10000, (int x, int y) -> void)
         bool onEnemy = combat.currentTarget != nullptr && InsideTargetBox(this, (float)(x - modifier_x), (float)(y - modifier_y));
         bool aiming = lastRegion == Region::TARGET || lastRegion == Region::WEAPONS || lastRegion == Region::DRONES ||
                       (lastRegion == Region::WORLD && (onEnemy || combat.CanTargetSelf()));
-        if (armed && !aiming) combat.DisarmAll();
+        if (armed && !aiming)
+        {
+            combat.DisarmAll();
+            // FTL keeps buttons from hovering while something is armed; hover again so this tap reaches them.
+            gui->MouseMove(x - modifier_x, y - modifier_y);
+        }
     }
     super(x, y);
 }
@@ -1722,6 +1775,7 @@ int FoldLayoutChoiceOnScreen() { return -1; }
 int FoldLayoutTooltipOnScreen() { return -1; }
 const char *FoldLayoutCheckRegion(bool &windowOverBalances) { windowOverBalances = false; return nullptr; }
 float FoldLayoutBalancesBottom() { return 0.f; }
+bool FoldLayoutCheckClip(float &x1, float &y1, float &x2, float &y2) { return false; }
 void FoldLayoutPopMatrix() {}
 const char *FoldLayoutDescribe() { return ""; }
 
