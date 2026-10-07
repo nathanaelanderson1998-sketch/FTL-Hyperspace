@@ -133,11 +133,22 @@ namespace
 
     // The star map window is about 750x580 in game coordinates: let it fill the canvas width. The store and ship
     // screens are about 590x560 and the pause menu smaller: up to twice their size.
+    // The store, ship screens and pause menu sit below the hull/scrap/fuel/missiles/drones rows (game y 0..82 of the
+    // top-left group), so the player's balances stay in view while shopping. Canvas y range they may use:
+    void WindowArea(CApp *app, float &top, float &bottom)
+    {
+        float ey = (float)ExtraY(app);
+        top = -ey + HudScale(app) * 82.f + 6.f;
+        bottom = 720.f + ey - 6.f;
+    }
+
     float ModalScale(CApp *app)
     {
         if (app->gui != nullptr && !StarMapOpen(app->gui) && !ChoiceOpen(app->gui))
         {
-            float scale = (std::min)((float)(app->screen_x - 24) / 600.f, (float)(app->screen_y - 24) / 570.f);
+            float top, bottom;
+            WindowArea(app, top, bottom);
+            float scale = (std::min)((float)(app->screen_x - 24) / 600.f, (bottom - top) / 565.f);
             return (std::max)(1.f, (std::min)(2.f, scale));
         }
         float scale = (std::min)((float)app->screen_x / 760.f, (float)app->screen_y / 600.f);
@@ -302,7 +313,12 @@ namespace
             // The star map window sits right of centre in the 1280x720 layout; centre it on the canvas.
             if (StarMapOpen(app->gui)) return {715.f, 375.f, 640.f, 360.f, ModalScale(app)};
             if (ChoiceOpen(app->gui)) return ChoiceAnchor(app);
-            return {635.f, 338.f, 640.f, 360.f, ModalScale(app)}; // store, ship screens, pause menu
+        {
+            // Store, ship screens, pause menu: centred in the area below the balances.
+            float top, bottom;
+            WindowArea(app, top, bottom);
+            return {635.f, 338.f, 640.f, (top + bottom) / 2.f, ModalScale(app)};
+        }
         default: return {0.f, 0.f, 0.f, 0.f, 1.f};
         }
     }
