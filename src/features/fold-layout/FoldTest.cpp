@@ -20,14 +20,15 @@
 // FTL_FOLD_TEST_CANVAS=WxH  opens a W x H window instead of using the desktop (with FTL_FOLD_LAYOUT=1 the
 //                           layout then treats it like the phone's canvas).
 // FTL_FOLD_TEST=<file>      runs a script of timed input. Each line: "<seconds> <command> [args]".
-//   move x y | click x y | rclick x y | down x y | up x y | drag x1 y1 x2 y2 [frames] |
+//   move P | click P | rclick P | down P | up P | drag P1 P2 [frames] |
 //   mdown x y | mdrag x y | mup x y | wheel x y notches | key sdlkey | cmd <console command> |
 //   shot name | state | expect key=value (or key!=value) | quit
-//   Coordinates are window pixels. "shot" writes <script dir>/<name>.bmp; "state" logs the game state that
+//   A point P is window pixels "x y" or a layout region and a game point, e.g. "bl 300 638" (tl/bl/br/world/modal). "shot" writes <script dir>/<name>.bmp; "state" logs the game state that
 //   "expect" checks; every expect logs "Fold test: PASS ..." or "Fold test: FAIL ...".
 
 void FoldLayoutWheel(CApp *app, int windowX, int windowY, float notches); // FoldLayout.cpp
 const char *FoldLayoutDescribe();                                       // FoldLayout.cpp
+bool FoldLayoutToWindow(const std::string &region, float x, float y, int &windowX, int &windowY); // FoldLayout.cpp
 
 namespace
 {
@@ -194,6 +195,23 @@ namespace
         if (!ok) hs_log_file("Fold test:   state: %s\n", StateText(state).c_str());
     }
 
+    // A point is either window pixels ("x y") or a game point in a layout region ("bl 300 638"), placed where
+    // that region draws it right now.
+    bool ReadPoint(std::istringstream &in, int &x, int &y)
+    {
+        std::string first;
+        if (!(in >> first)) return false;
+        if (first == "tl" || first == "bl" || first == "br" || first == "world" || first == "modal" || first == "none")
+        {
+            float gx = 0.f, gy = 0.f;
+            in >> gx >> gy;
+            return FoldLayoutToWindow(first, gx, gy, x, y);
+        }
+        x = std::atoi(first.c_str());
+        in >> y;
+        return true;
+    }
+
     void Move(CApp *app, int x, int y, bool left) { app->OnMouseMove(x, y, 0, 0, left, false, false); }
 
     void RunStep(CApp *app, const Step &step)
@@ -204,12 +222,12 @@ namespace
         hs_log_file("Fold test: %.1f %s %s\n", step.time, cmd.c_str(), step.rest.c_str());
         if (cmd == "move")
         {
-            in >> x >> y;
+            ReadPoint(in, x, y);
             Move(app, x, y, false);
         }
         else if (cmd == "click" || cmd == "rclick")
         {
-            in >> x >> y;
+            ReadPoint(in, x, y);
             bool right = cmd == "rclick";
             // Same as a tap on the phone: pointer moves there, one frame later press, next frame release.
             Move(app, x, y, false);
@@ -218,18 +236,19 @@ namespace
         }
         else if (cmd == "down")
         {
-            in >> x >> y;
+            ReadPoint(in, x, y);
             Move(app, x, y, false);
             frameQueue.push_back([=](CApp *g) { g->OnLButtonDown(x, y); });
         }
         else if (cmd == "up")
         {
-            in >> x >> y;
+            ReadPoint(in, x, y);
             app->OnLButtonUp(x, y);
         }
         else if (cmd == "drag")
         {
-            in >> x >> y >> a >> b;
+            ReadPoint(in, x, y);
+            ReadPoint(in, a, b);
             int frames = 12;
             in >> frames;
             Move(app, x, y, false);
@@ -243,22 +262,23 @@ namespace
         }
         else if (cmd == "mdown")
         {
-            in >> x >> y;
+            ReadPoint(in, x, y);
             app->OnMButtonDown(x, y);
         }
         else if (cmd == "mdrag")
         {
-            in >> x >> y;
+            ReadPoint(in, x, y);
             app->OnMouseMove(x, y, 0, 0, false, false, true);
         }
         else if (cmd == "mup")
         {
-            in >> x >> y;
+            ReadPoint(in, x, y);
             app->OnMouseMove(x, y, 0, 0, false, false, false);
         }
         else if (cmd == "wheel")
         {
-            in >> x >> y >> c;
+            ReadPoint(in, x, y);
+            in >> c;
             FoldLayoutWheel(app, x, y, (float)c);
         }
         else if (cmd == "key")

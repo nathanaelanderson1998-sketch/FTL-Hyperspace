@@ -8,6 +8,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <string>
 #include <GL/gl.h>
 
 // Fold layout: lets the in-game screen use a canvas bigger than 1280x720 (e.g. a near-square phone screen).
@@ -126,7 +127,8 @@ namespace
     bool BottomRightLifted(CApp *app)
     {
         float s = HudScale(app);
-        bool drones = !app->gui->combatControl.droneControl.boxes.empty();
+        ShipManager *ship = app->gui->shipComplete != nullptr ? app->gui->shipComplete->shipManager : nullptr;
+        bool drones = ship != nullptr && ship->HasSystem(4); // drone control
         float bottomLeftRight = -ExtraX(app) + s * (drones ? 905.f : 650.f);
         float bottomRightLeft = 1280.f + ExtraX(app) - s * (1280.f - BOTTOM_RIGHT_LEFT);
         return bottomLeftRight + 8.f > bottomRightLeft;
@@ -401,6 +403,34 @@ bool FoldLayoutShiftTopLeftToBottomRight(float &dx, float &dy)
     Anchor tl = GetAnchor(app, Region::TOP_LEFT), br = GetAnchor(app, Region::BOTTOM_RIGHT);
     dx = tl.ax - br.ax + (br.cx - tl.cx) / tl.s;
     dy = tl.ay - br.ay + (br.cy - tl.cy) / tl.s;
+    return true;
+}
+
+// For the test harness: where a game point in a region ("tl", "bl", "br", "world", "modal", "none") is on the
+// window right now, so test taps land on controls whatever the canvas size and zoom.
+bool FoldLayoutToWindow(const std::string &region, float x, float y, int &windowX, int &windowY)
+{
+    CApp *app = G_->GetCApp();
+    if (app == nullptr) return false;
+    float cx = x, cy = y;
+    if (InGame(app) && region != "none")
+    {
+        if (region == "world")
+        {
+            cx = 640.f + panX + zoom * (x - 640.f);
+            cy = 360.f + panY + zoom * (y - 360.f);
+        }
+        else
+        {
+            Region r = region == "tl" ? Region::TOP_LEFT : region == "bl" ? Region::BOTTOM_LEFT :
+                       region == "br" ? Region::BOTTOM_RIGHT : Region::MODAL;
+            Anchor a = GetAnchor(app, r);
+            cx = a.cx + a.s * (x - a.ax);
+            cy = a.cy + a.s * (y - a.ay);
+        }
+    }
+    windowX = (int)std::lround(cx) + app->modifier_x;
+    windowY = (int)std::lround(cy) + app->modifier_y;
     return true;
 }
 
