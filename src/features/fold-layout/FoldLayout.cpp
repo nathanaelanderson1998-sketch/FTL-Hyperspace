@@ -271,6 +271,42 @@ namespace
 
 // ---- Window / clip ----
 
+// FTL_FOLD_LAYOUT=1 (set by the Android launcher) also takes over the display mode: borders mode on the whole
+// desktop. Without this FTL can fall back to a 1280x720 window, e.g. when Wine reports the borderless window as
+// not fullscreen (CApp::UpdateFullScreen then switches the setting back to windowed).
+static bool ForceBordersMode()
+{
+    static const bool forced = []
+    {
+        const char *value = std::getenv("FTL_FOLD_LAYOUT");
+        return value != nullptr && value[0] == '1';
+    }();
+    return forced;
+}
+
+HOOK_METHOD_PRIORITY(CApp, SetupWindow, -10000, () -> bool)
+{
+    LOG_HOOK("HOOK_METHOD_PRIORITY -> CApp::SetupWindow -> Begin (FoldLayout.cpp)\n")
+    if (ForceBordersMode())
+    {
+        auto settings = Global_Settings_Settings;
+        settings->fullscreen = 2;
+        settings->currentFullscreen = 2;
+        settings->manualResolution = false;
+        settings->manualWindowed = false;
+        settings->manualStretched = false;
+        hs_log_file("Fold layout: forcing fullscreen=2 (borders) on the desktop\n");
+    }
+    return super();
+}
+
+HOOK_METHOD_PRIORITY(CApp, UpdateFullScreen, -10000, () -> void)
+{
+    LOG_HOOK("HOOK_METHOD_PRIORITY -> CApp::UpdateFullScreen -> Begin (FoldLayout.cpp)\n")
+    if (ForceBordersMode()) return;
+    super();
+}
+
 HOOK_METHOD_PRIORITY(CApp, OnLoop, -10000, () -> void)
 {
     LOG_HOOK("HOOK_METHOD_PRIORITY -> CApp::OnLoop -> Begin (FoldLayout.cpp)\n")
