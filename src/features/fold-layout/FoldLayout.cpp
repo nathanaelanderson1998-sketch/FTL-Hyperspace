@@ -438,8 +438,12 @@ namespace
 
     // A canvas point -> the game point FTL should see. Taps on parts of the world that sit under the HUD in the
     // original layout are dropped (they would hit the moved HUD); a drag keeps the region it started in.
+    float pointerX = 0.f, pointerY = 0.f; // where the pointer really is, in canvas coordinates
+
     Point MapDrawnPoint(CApp *app, int x, int y, bool startDrag)
     {
+        pointerX = (float)x;
+        pointerY = (float)y;
         float gx, gy;
         if (dragging)
         {
@@ -799,9 +803,18 @@ HOOK_METHOD_PRIORITY(DoorBox, OnRender, -10000, (bool ignoreStatus) -> void)
 {
     LOG_HOOK("HOOK_METHOD_PRIORITY -> DoorBox::OnRender -> Begin (FoldLayout.cpp)\n")
     CApp *app = G_->GetCApp();
-    float ax, ay;
-    if (!inGuiRender || !InGame(app) || !TwoRowBottom(app) || !DoorAnchor(this, ax, ay)) return super(ignoreStatus);
+    float ax = 0.f, ay = 0.f;
     lastDoorBox = this;
+    static int logged = 0;
+    if (logged < 3)
+    {
+        logged++;
+        bool anchor = DoorAnchor(this, ax, ay);
+        hs_log_file("Fold layout: doors box location %d,%d buttonOffset %d,%d open %d,%d close %d,%d anchor %d %.0f,%.0f inGui %d\n",
+                    location.x, location.y, buttonOffset.x, buttonOffset.y, openDoors.hitbox.x, openDoors.hitbox.y,
+                    closeDoors.hitbox.x, closeDoors.hitbox.y, (int)anchor, ax, ay, (int)inGuiRender);
+    }
+    if (!inGuiRender || !InGame(app) || !TwoRowBottom(app) || !DoorAnchor(this, ax, ay)) return super(ignoreStatus);
     CSurface::GL_PushMatrix();
     CSurface::GL_Translate(ax, ay, 0.f);
     CSurface::GL_Scale(DOOR_BUTTON_SCALE, DOOR_BUTTON_SCALE, 1.f);
@@ -1030,7 +1043,31 @@ HOOK_METHOD_PRIORITY(MouseControl, RenderTooltip, -10000, (Point tooltipPoint, b
 {
     LOG_HOOK("HOOK_METHOD_PRIORITY -> MouseControl::RenderTooltip -> Begin (FoldLayout.cpp)\n")
     if (cursorMasked) glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
-    super(tooltipPoint, staticPos);
+    CApp *app = G_->GetCApp();
+    if (staticPos || lastRegion == Region::NONE || !InGame(app))
+    {
+        super(tooltipPoint, staticPos);
+    }
+    else
+    {
+        // FTL keeps tooltips inside its own 1280x720 area, which no longer matches where the HUD is drawn. Place
+        // the box here instead: centred above the finger (below it if there is no room), on the canvas.
+        float ts = lastRegion == Region::WORLD ? HudScale(app) : (std::min)(1.7f, GetAnchor(app, lastRegion).s);
+        int width = overrideTooltipWidth > 0 ? overrideTooltipWidth : 350;
+        Point size = MeasureTooltip(width);
+        float w = ts * (size.x + 36.f), h = ts * (size.y + 36.f);
+        float ex = (float)ExtraX(app), ey = (float)ExtraY(app);
+        float cx = pointerX - w / 2.f;
+        float cy = pointerY - h - 24.f;
+        if (cy < -ey + 4.f) cy = pointerY + 36.f;
+        cx = (std::max)(-ex + 4.f, (std::min)(1280.f + ex - 4.f - w, cx));
+        cy = (std::max)(-ey + 4.f, (std::min)(720.f + ey - 4.f - h, cy));
+        CSurface::GL_PushMatrix();
+        ApplyInverse(app, lastRegion);
+        CSurface::GL_Scale(ts, ts, 1.f);
+        super(Point((int)(cx / ts), (int)(cy / ts)), true);
+        CSurface::GL_PopMatrix();
+    }
     if (cursorMasked) glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
 }
 
