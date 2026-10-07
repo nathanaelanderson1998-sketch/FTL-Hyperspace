@@ -282,7 +282,8 @@ namespace
             }
             return false;
         }
-        if (first == "tl" || first == "bl" || first == "br" || first == "wp" || first == "world" || first == "modal" || first == "none")
+        if (first == "tl" || first == "bl" || first == "br" || first == "wp" || first == "cr" || first == "dr" || first == "door" ||
+            first == "world" || first == "modal" || first == "none")
         {
             float gx = 0.f, gy = 0.f;
             in >> gx >> gy;
