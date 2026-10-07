@@ -33,6 +33,8 @@ const char *FoldLayoutDescribe();                                       // FoldL
 int FoldLayoutChoiceOnScreen(); // FoldLayout.cpp
 int FoldLayoutTooltipOnScreen(); // FoldLayout.cpp
 bool FoldLayoutTouchButton(int index, int &windowX, int &windowY); // FoldLayout.cpp
+int FoldCheckOffscreenCount(); // FoldCheck.cpp
+int FoldCheckOverlapCount();   // FoldCheck.cpp
 bool FoldLayoutToWindow(const std::string &region, float x, float y, int &windowX, int &windowY); // FoldLayout.cpp
 
 namespace
@@ -128,6 +130,8 @@ namespace
         }
 
         CommandGui *gui = app->gui;
+        state["offscreen"] = std::to_string(FoldCheckOffscreenCount());
+        state["overlap"] = std::to_string(FoldCheckOverlapCount());
         state["menu"] = std::to_string((int)app->menu.bOpen);
         if (gui == nullptr || app->menu.bOpen) return state;
 

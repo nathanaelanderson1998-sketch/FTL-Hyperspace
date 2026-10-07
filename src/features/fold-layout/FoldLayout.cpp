@@ -770,6 +770,8 @@ namespace
     // Windows (star map, event box, store...) pass absolute = true: they can be drawn from inside another region's
     // render (an event box opened by a ship is drawn with the ships), and must not inherit its zoom.
     Region activeRegion = Region::NONE;
+    bool drawingTooltip = false;
+    bool drawingTouchButtons = false;
 
     struct RegionScope
     {
@@ -814,10 +816,15 @@ bool FoldLayoutPushTopLeftToBottomRight()
     CSurface::GL_PushMatrix();
     ApplyInverse(app, Region::TOP_LEFT);
     ApplyTransform(app, Region::BOTTOM_RIGHT);
+    activeRegion = Region::BOTTOM_RIGHT;
     return true;
 }
 
-void FoldLayoutPopMatrix() { CSurface::GL_PopMatrix(); }
+void FoldLayoutPopMatrix()
+{
+    CSurface::GL_PopMatrix();
+    activeRegion = Region::TOP_LEFT;
+}
 
 // For the test harness: where a game point in a region ("tl", "bl", "br", "world", "modal", "none") is on the
 // window right now, so test taps land on controls whatever the canvas size and zoom.
@@ -876,6 +883,39 @@ bool FoldLayoutToWindow(const std::string &region, float x, float y, int &window
     windowX = (int)std::lround(cx) + app->modifier_x;
     windowY = (int)std::lround(cy) + app->modifier_y;
     return true;
+}
+
+// For the draw checker (FoldCheck.cpp): what is being drawn now, if it must stay on the canvas (nullptr: the
+// ships, space, menus...). windowOverBalances: a store/ship screen, which must leave the balances rows visible.
+const char *FoldLayoutCheckRegion(bool &windowOverBalances)
+{
+    windowOverBalances = false;
+    CApp *app = G_->GetCApp();
+    if (app == nullptr || !InGame(app)) return nullptr;
+    if (drawingTooltip) return "tooltip";
+    if (drawingTouchButtons) return "touch-buttons";
+    switch (activeRegion)
+    {
+    case Region::TOP_LEFT: return "top-left";
+    case Region::CREW: return "crew";
+    case Region::BOTTOM_LEFT: return "bottom-left";
+    case Region::BOTTOM_RIGHT: return "bottom-right";
+    case Region::WEAPONS: return "weapons";
+    case Region::DRONES: return "drones";
+    case Region::TARGET: return zoom == 1.f ? "target" : nullptr;
+    case Region::MODAL:
+        windowOverBalances = !StarMapOpen(app->gui) && !ChoiceOpen(app->gui) && !app->gui->menuBox.bOpen;
+        return StarMapOpen(app->gui) ? "star-map" : ChoiceOpen(app->gui) ? "event" : "window";
+    default: return nullptr;
+    }
+}
+
+// For the draw checker: window y of the bottom of the hull/scrap/fuel/missiles/drones rows.
+float FoldLayoutBalancesBottom()
+{
+    CApp *app = G_->GetCApp();
+    if (app == nullptr) return 0.f;
+    return (float)app->modifier_y - (float)ExtraY(app) + HudScale(app) * 82.f;
 }
 
 // For the test harness: whether the open event box is drawn wholly on the canvas (-1 when none is open).
@@ -1037,6 +1077,7 @@ namespace
     void RenderTouchButtons(CApp *app)
     {
         if (!TouchButtonsShown(app)) return;
+        drawingTouchButtons = true;
         static const char *labels[] = {"MENU", "PAUSE"};
         for (int i = 0; i < 2; i++)
         {
@@ -1049,6 +1090,7 @@ namespace
             freetype::easy_printCenter(24, r.x + r.w / 2.f, r.y + r.h / 2.f - 12.f, labels[i]);
             CSurface::GL_SetColor(GL_Color(1.f, 1.f, 1.f, 1.f));
         }
+        drawingTouchButtons = false;
     }
 }
 
@@ -1220,14 +1262,18 @@ HOOK_METHOD_PRIORITY(SystemControl, OnRender, -10000, (bool front) -> void)
         GLsizei panelRight = (GLsizei)(app->modifier_x + PanelRight(app)) + 2;
         Anchor br = GetAnchor(app, Region::BOTTOM_RIGHT);
         GLint split = app->screen_y - (GLint)(app->modifier_y + br.cy - br.s * (720.f - SUBSYSTEM_ROW_TOP));
+        Region saved = activeRegion;
         glScissor(0, split, panelRight, app->screen_y - split);
         PushRegion(app, Region::BOTTOM_LEFT);
+        activeRegion = Region::BOTTOM_LEFT;
         super(front);
         CSurface::GL_PopMatrix();
         glScissor(0, 0, panelRight, split);
         PushRegion(app, Region::BOTTOM_RIGHT);
+        activeRegion = Region::BOTTOM_RIGHT;
         super(front);
         CSurface::GL_PopMatrix();
+        activeRegion = saved;
         glDisable(GL_SCISSOR_TEST);
         return;
     }
@@ -1273,7 +1319,10 @@ HOOK_STATIC_PRIORITY(CSurface, GL_DrawRectOutline, -10000, (int x1, int y1, int 
     CSurface::GL_PushMatrix();
     ApplyInverse(app, Region::CREW);
     ApplyTransform(app, dragging ? dragRegion : Region::WORLD);
+    Region saved = activeRegion;
+    activeRegion = dragging ? dragRegion : Region::WORLD;
     bool result = super(x1, y1, x2, y2, color, lineWidth);
+    activeRegion = saved;
     CSurface::GL_PopMatrix();
     return result;
 }
@@ -1312,6 +1361,32 @@ HOOK_METHOD_PRIORITY(MenuScreen, OnRender, -10000, () -> void)
     modalWindowDepth++;
     super();
     modalWindowDepth--;
+}
+
+// The description box shown while an item is held in the store (and the ship screens) sits left of the window in
+// FTL's layout; enlarged with the window it would leave the canvas. It is drawn at the left edge instead, over the
+// window (it only shows while an item is held, like a tooltip).
+HOOK_METHOD_PRIORITY(InfoBox, OnRender, -10000, () -> void)
+{
+    LOG_HOOK("HOOK_METHOD_PRIORITY -> InfoBox::OnRender -> Begin (FoldLayout.cpp)\n")
+    CApp *app = G_->GetCApp();
+    if (!InGame(app) || activeRegion != Region::MODAL) return super();
+    Anchor a = GetAnchor(app, Region::MODAL);
+    float ex = (float)ExtraX(app);
+    float left = a.cx + a.s * (location.x - a.ax);
+    float width = a.s * (float)(std::max)(descBoxSize.x, 260);
+    if (left >= -ex + 4.f && left + width <= 1280.f + ex - 4.f) return super();
+    float top, bottom;
+    WindowArea(app, top, bottom);
+    float ib = (std::min)(a.s, 1.5f);
+    float y = (std::max)(top, a.cy + a.s * (location.y - a.ay));
+    CSurface::GL_PushMatrix();
+    ApplyInverse(app, Region::MODAL);
+    CSurface::GL_Translate(-ex + 8.f, y, 0.f);
+    CSurface::GL_Scale(ib, ib, 1.f);
+    CSurface::GL_Translate((float)-location.x, (float)-location.y, 0.f);
+    super();
+    CSurface::GL_PopMatrix();
 }
 
 HOOK_METHOD_PRIORITY(ChoiceBox, OnRender, -10000, () -> void)
@@ -1467,7 +1542,9 @@ HOOK_METHOD_PRIORITY(MouseControl, RenderTooltip, -10000, (Point tooltipPoint, b
         CSurface::GL_PushMatrix();
         if (activeRegion != Region::NONE) ApplyInverse(app, activeRegion);
         CSurface::GL_Scale(ts, ts, 1.f);
+        drawingTooltip = true;
         super(Point((int)(cx / ts), (int)(cy / ts)), true);
+        drawingTooltip = false;
         CSurface::GL_PopMatrix();
     }
     if (cursorMasked) glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
@@ -1631,6 +1708,8 @@ HOOK_METHOD_PRIORITY(CApp, OnRButtonUp, -10000, (int x, int y) -> void)
 bool FoldLayoutPushTopLeftToBottomRight() { return false; }
 int FoldLayoutChoiceOnScreen() { return -1; }
 int FoldLayoutTooltipOnScreen() { return -1; }
+const char *FoldLayoutCheckRegion(bool &windowOverBalances) { windowOverBalances = false; return nullptr; }
+float FoldLayoutBalancesBottom() { return 0.f; }
 void FoldLayoutPopMatrix() {}
 const char *FoldLayoutDescribe() { return ""; }
 
