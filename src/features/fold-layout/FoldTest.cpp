@@ -219,6 +219,40 @@ namespace
     {
         std::string first;
         if (!(in >> first)) return false;
+        if (first == "proom" || first == "eroom")
+        {
+            // Centre of a room of the player ship or the enemy ship, wherever the game currently draws it.
+            int index = 0;
+            in >> index;
+            CApp *app = G_->GetCApp();
+            CommandGui *gui = app != nullptr ? app->gui : nullptr;
+            if (gui == nullptr) return false;
+            bool enemy = first == "eroom";
+            CompleteShip *ship = enemy ? gui->combatControl.currentTarget : gui->shipComplete;
+            ShipGraph *graph = ShipGraph::GetShipInfo(enemy ? 1 : 0);
+            if (ship == nullptr || graph == nullptr || index < 0 || index >= (int)graph->rooms.size()) return false;
+            Point corner = ship->shipManager->ship.GetShipCorner();
+            Point origin = enemy ? gui->combatControl.position + gui->combatControl.targetPosition + corner : gui->shipPosition + corner;
+            const Globals::Rect &r = graph->rooms[index]->rect;
+            return FoldLayoutToWindow("world", (float)(origin.x + r.x + r.w / 2), (float)(origin.y + r.y + r.h / 2), x, y);
+        }
+        if (first == "crew")
+        {
+            // A player crew member on the player ship (same numbering as the crewN_ state keys).
+            int index = 0, n = 0;
+            in >> index;
+            CApp *app = G_->GetCApp();
+            CommandGui *gui = app != nullptr ? app->gui : nullptr;
+            if (gui == nullptr || gui->shipComplete == nullptr) return false;
+            ShipManager *ship = gui->shipComplete->shipManager;
+            Point origin = gui->shipPosition + ship->ship.GetShipCorner();
+            for (CrewMember *crew : ship->vCrewList)
+            {
+                if (crew == nullptr || crew->iShipId != 0) continue;
+                if (n++ == index) return FoldLayoutToWindow("world", origin.x + crew->x, origin.y + crew->y, x, y);
+            }
+            return false;
+        }
         if (first == "tl" || first == "bl" || first == "br" || first == "world" || first == "modal" || first == "none")
         {
             float gx = 0.f, gy = 0.f;
@@ -249,6 +283,7 @@ namespace
             bool right = cmd == "rclick";
             // Same as a tap on the phone: pointer moves there, one frame later press, next frame release.
             Move(app, x, y, false);
+            for (int i = 0; i < 6; i++) frameQueue.push_back([](CApp *) {});
             frameQueue.push_back([=](CApp *g) { right ? g->OnRButtonDown(x, y) : g->OnLButtonDown(x, y); });
             frameQueue.push_back([=](CApp *g) { right ? g->OnRButtonUp(x, y) : g->OnLButtonUp(x, y); });
         }
@@ -270,6 +305,7 @@ namespace
             int frames = 12;
             in >> frames;
             Move(app, x, y, false);
+            for (int i = 0; i < 6; i++) frameQueue.push_back([](CApp *) {});
             frameQueue.push_back([=](CApp *g) { g->OnLButtonDown(x, y); });
             for (int i = 1; i <= frames; i++)
             {
