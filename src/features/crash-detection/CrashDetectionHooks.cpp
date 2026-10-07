@@ -2,6 +2,8 @@
 #include "integration/CrashReportFlow.h"
 #include "ui/CrashDialogManager.h"
 
+bool FoldLayoutActive(); // features/fold-layout/FoldLayout.cpp
+
 // === CApp Hooks ===
 
 // Clear crash flag on normal game exit
@@ -101,7 +103,9 @@ HOOK_METHOD(MenuScreen, OnRender, () -> void)
 {
     LOG_HOOK("HOOK_METHOD -> MenuScreen::OnRender -> Begin (CrashDetectionHooks.cpp)\n")
     super();
-    if (this->bOpen && !this->bShowControls)
+    // The fold layout (the phone) has no use for the desktop bug report button, and it sits in a screen corner the
+    // enlarged menus no longer reach.
+    if (this->bOpen && !this->bShowControls && !FoldLayoutActive())
     {
         CrashDialogManager::GetInstance()->RenderButton();
     }
@@ -142,7 +146,7 @@ HOOK_METHOD(OptionsScreen, OnRender, () -> void)
 {
     LOG_HOOK("HOOK_METHOD -> OptionsScreen::OnRender -> Begin (CrashDetectionHooks.cpp)\n")
     super();
-    if (this->bOpen)
+    if (this->bOpen && !FoldLayoutActive())
     {
         CrashDialogManager::GetInstance()->RenderButton();
     }

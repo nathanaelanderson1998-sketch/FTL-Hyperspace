@@ -74,10 +74,21 @@ namespace
 
     Matrix &Top() { return stack.back(); }
 
+    // Frames checked so far, and the last frame each problem was seen in: only one seen in two frames running is
+    // reported (a single frame, e.g. a crew icon at 0,0 the frame a crew member is added, cannot be seen).
+    int frameNumber = 0;
+    std::unordered_map<std::string, int> lastSeen;
+
     void Report(const char *kind, const std::string &what)
     {
         std::string key = std::string(kind) + " " + what;
-        if (!reported.insert(key).second) return;
+        if (reported.count(key) != 0) return;
+        auto seen = lastSeen.find(key);
+        if (seen != lastSeen.end() && seen->second == frameNumber) return;
+        bool persistent = seen != lastSeen.end() && seen->second == frameNumber - 1;
+        lastSeen[key] = frameNumber;
+        if (!persistent) return;
+        reported.insert(key);
         (std::string(kind) == "OFFSCREEN" ? offscreenCount : overlapCount)++;
         hs_log_file("Fold check: %s %s\n", kind, what.c_str());
     }
@@ -154,6 +165,7 @@ namespace
             }
         }
         frame.clear();
+        frameNumber++;
     }
 
     void Primitive(const void *primitive)

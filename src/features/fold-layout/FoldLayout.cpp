@@ -285,7 +285,6 @@ namespace
     }
 
     // The crew boxes and the save/return stations buttons under them.
-    float CrewScale(CApp *app) { return TwoRowBottom(app) ? 2.f : HudScale(app); }
     const float CREW_PANEL_TOP = 145.f;
     const float STATION_BUTTON_SCALE = 1.25f;
 
@@ -298,6 +297,50 @@ namespace
         ay = (float)(std::min)(crew.saveStations.hitbox.y, crew.returnStations.hitbox.y) - 4.f;
         return ax > 0.f && ax < 200.f && ay > 150.f && ay < 600.f;
     }
+
+    // Bottom of the crew list with its enlarged stations buttons, in game y (the crew frame, before scaling).
+    float CrewListBottom(CApp *app)
+    {
+        float sx, sy;
+        if (!StationsAnchor(app, sx, sy)) return CREW_PANEL_TOP + 30.f * 3.f + 50.f;
+        CrewControl &crew = app->gui->crewControl;
+        float bottom = (float)(std::max)(crew.saveStations.hitbox.y + crew.saveStations.hitbox.h, crew.returnStations.hitbox.y + crew.returnStations.hitbox.h) + 4.f;
+        return sy + STATION_BUTTON_SCALE * (bottom - sy);
+    }
+
+    // The reactor column grows up from the left end of the systems row, about REACTOR_BAR game px per bar. The crew
+    // list always leaves room for REACTOR_ROOM bars; a bigger reactor is cut at the crew list (its top bars are the
+    // allocated ones; the free power shows at the bottom).
+    const float REACTOR_BOTTOM = 694.f, REACTOR_BAR = 9.f;
+    const int REACTOR_ROOM = 10;
+
+    int ReactorBars()
+    {
+        PowerManager *power = PowerManager::GetPowerManager(0);
+        return power != nullptr ? power->currentPower.second : 8;
+    }
+
+    // Canvas y of the crew list's top, and the lowest its bottom may reach.
+    float CrewTop(CApp *app) { return -(float)ExtraY(app) + HudScale(app) * CREW_PANEL_TOP + 4.f; }
+
+    float CrewLimit(CApp *app)
+    {
+        float b = BottomScale(app);
+        float rowBottom = 720.f + (float)ExtraY(app) - b * (720.f - SUBSYSTEM_ROW_TOP); // game y 720 of the systems row
+        int bars = (std::min)(ReactorBars(), REACTOR_ROOM);
+        return rowBottom + b * (REACTOR_BOTTOM - REACTOR_BAR * (float)bars - 720.f) - 8.f;
+    }
+
+    // 2x, smaller for a big crew so the list ends above the reactor.
+    float CrewScale(CApp *app)
+    {
+        if (!TwoRowBottom(app)) return HudScale(app);
+        float fit = (CrewLimit(app) - CrewTop(app)) / (std::max)(40.f, CrewListBottom(app) - CREW_PANEL_TOP);
+        return (std::max)(1.f, (std::min)(2.f, fit));
+    }
+
+    // Canvas y the bottom-left (systems) pass is cut at: just under the crew list.
+    float CrewBottom(CApp *app) { return CrewTop(app) + CrewScale(app) * (CrewListBottom(app) - CREW_PANEL_TOP); }
 
     // A HUD group or window maps game point p to canvas point c + s * (p - a).
     struct Anchor
@@ -317,7 +360,7 @@ namespace
         case Region::TOP_LEFT: return {0.f, 0.f, -ex, -ey, s};
         case Region::CREW:
             if (!panel) return {0.f, 0.f, -ex, -ey, s};
-            return {0.f, CREW_PANEL_TOP, -ex, -ey + s * CREW_PANEL_TOP + 4.f, CrewScale(app)};
+            return {0.f, CREW_PANEL_TOP, -ex, CrewTop(app), CrewScale(app)};
         case Region::BOTTOM_LEFT:
             if (!panel) return {0.f, 720.f, -ex, 720.f + ey, b};
             // Systems: the upper row of the panel.
@@ -843,6 +886,9 @@ namespace
 
 // Hyperspace's More Info button is drawn from the top-left group but belongs in the bottom-right one: switches
 // from the top-left transform to the bottom-right one until FoldLayoutPopMatrix().
+// Whether the fold layout is on now (other features hide desktop-only bits).
+bool FoldLayoutActive() { return LayoutActive(G_->GetCApp()); }
+
 bool FoldLayoutPushTopLeftToBottomRight()
 {
     CApp *app = G_->GetCApp();
@@ -986,10 +1032,10 @@ const char *FoldLayoutDescribe()
     static const char *names[] = {"none", "top-left", "bottom-left", "bottom-right", "world", "modal", "weapons", "crew", "drones", "target"};
     CApp *app = G_->GetCApp();
     bool game = app != nullptr && InGame(app);
-    std::snprintf(text, sizeof(text), "region=%s pressRegion=%s zoom=%.2f pan=%.0f,%.0f hudScale=%.2f bottomScale=%.2f modalScale=%.2f twoRow=%d lifted=%d sysScrollable=%d sysScrolled=%d",
+    std::snprintf(text, sizeof(text), "region=%s pressRegion=%s zoom=%.2f pan=%.0f,%.0f hudScale=%.2f bottomScale=%.2f modalScale=%.2f twoRow=%d lifted=%d sysScrollable=%d sysScrolled=%d crewScale=%.2f",
                   names[(int)lastRegion], names[(int)pressRegion], zoom, panX, panY, game ? HudScale(app) : 0.f, game ? BottomScale(app) : 0.f,
                   game ? ModalScale(app) : 0.f, game ? (int)TwoRowBottom(app) : 0, game ? (int)BottomRightLifted(app) : 0,
-                  game ? (int)(MaxSystemsScroll(app) > 0.f) : 0, game ? (int)(SystemsScroll(app) > 1.f) : 0);
+                  game ? (int)(MaxSystemsScroll(app) > 0.f) : 0, game ? (int)(SystemsScroll(app) > 1.f) : 0, game ? CrewScale(app) : 0.f);
     return text;
 }
 
@@ -1327,11 +1373,13 @@ HOOK_METHOD_PRIORITY(SystemControl, OnRender, -10000, (bool front) -> void)
         GLint split = app->screen_y - (GLint)(app->modifier_y + br.cy - br.s * (720.f - SUBSYSTEM_ROW_TOP));
         Region saved = activeRegion;
         GLint panelLeft = (std::max)(0, (GLint)(app->modifier_x - ExtraX(app)));
-        glScissor(panelLeft, split, panelRight - panelLeft, app->screen_y - split);
+        // Nothing of the systems row above the crew list (a reactor taller than the room left for it).
+        GLint panelTop = (std::max)(0, (GLint)(app->modifier_y + CrewBottom(app)) + 4);
+        glScissor(panelLeft, split, panelRight - panelLeft, (std::max)(0, app->screen_y - split - panelTop));
         clipActive = true;
         clipX1 = (float)panelLeft;
         clipX2 = (float)panelRight;
-        clipY1 = 0.f;
+        clipY1 = (float)panelTop;
         clipY2 = (float)(app->screen_y - split);
         PushRegion(app, Region::BOTTOM_LEFT);
         activeRegion = Region::BOTTOM_LEFT;
@@ -1856,6 +1904,7 @@ HOOK_METHOD_PRIORITY(CApp, OnRButtonUp, -10000, (int x, int y) -> void)
 
 #else
 
+bool FoldLayoutActive() { return false; }
 bool FoldLayoutPushTopLeftToBottomRight() { return false; }
 int FoldLayoutChoiceOnScreen() { return -1; }
 int FoldLayoutTooltipOnScreen() { return -1; }
