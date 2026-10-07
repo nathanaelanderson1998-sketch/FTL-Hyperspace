@@ -1,5 +1,6 @@
 #include "Global.h"
 
+#include <chrono>
 #include <cstdlib>
 
 // Tap-to-move: with crew selected, a left click on a room (not on a crew member, door or crew box) sends the
@@ -48,13 +49,40 @@ HOOK_METHOD(CrewControl, LButton, (int mX, int mY, int wX, int wY, bool shiftHel
 static bool beamDragPending = false;
 static Point beamDragStart;
 
+// Double-tap to autofire: on a keyboard, shift-clicking a target sets that one weapon to autofire. A second tap on
+// the target within a moment of aiming a weapon there does the same.
+static int lastAimedSlot = -1;
+static Point lastAimedPoint;
+static std::chrono::steady_clock::time_point lastAimedTime;
+
 HOOK_METHOD(CombatControl, MouseClick, (int mX, int mY, bool shift) -> void)
 {
     LOG_HOOK("HOOK_METHOD -> CombatControl::MouseClick -> Begin (TapToMove.cpp)\n")
     bool wasEmpty = aimingPoints.empty();
+    int armedBefore = weapControl.armedWeapon != nullptr ? weapControl.armedSlot : -1;
     super(mX, mY, shift);
     beamDragPending = TapToMoveEnabled() && wasEmpty && aimingPoints.size() == 1;
     beamDragStart = Point(mX, mY);
+
+    if (!TapToMoveEnabled()) return;
+    auto now = std::chrono::steady_clock::now();
+    if (armedBefore != -1 && weapControl.armedWeapon == nullptr)
+    {
+        // This tap aimed that weapon.
+        lastAimedSlot = armedBefore;
+        lastAimedPoint = Point(mX, mY);
+        lastAimedTime = now;
+        return;
+    }
+    int dx = mX - lastAimedPoint.x, dy = mY - lastAimedPoint.y;
+    if (armedBefore == -1 && lastAimedSlot != -1 && dx * dx + dy * dy < 40 * 40 &&
+        now - lastAimedTime < std::chrono::milliseconds(500) && shipManager != nullptr && shipManager->weaponSystem != nullptr &&
+        lastAimedSlot < (int)shipManager->weaponSystem->weapons.size())
+    {
+        ProjectileFactory *weapon = shipManager->weaponSystem->weapons[lastAimedSlot];
+        if (weapon != nullptr && !weapon->targets.empty()) weapon->autoFiring = true;
+    }
+    lastAimedSlot = -1;
 }
 
 HOOK_METHOD(CombatControl, MouseUp, (int mX, int mY) -> void)

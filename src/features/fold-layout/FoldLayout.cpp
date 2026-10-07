@@ -150,7 +150,7 @@ namespace
     bool TwoRowBottom(CApp *app) { return ExtraY(app) >= 150; }
 
     const float SUBSYSTEM_ROW_TOP = 580.f; // the subsystems row, with the enlarged door buttons, in game y
-    const float DOOR_BUTTON_SCALE = 1.3f;  // the open/close all doors buttons (and the doors box) on top of that
+    const float DOOR_BUTTON_SCALE = 1.f;   // the doors box on top of that (the whole panel is door-sized now)
 
     // Where the weapon boxes start, in game x; the systems end there.
     float WeaponsLeft(CApp *app)
@@ -170,12 +170,25 @@ namespace
         return ship != nullptr && ship->HasSystem(4) && x >= 100 && x <= 1100; // drone control
     }
 
-    // The ships move up a little to make room for the bottom panel.
+    // On the tall canvas the ships start at 0.9x (pinch zooms from there) to leave room for the big bottom panel.
+    float BaseZoom(CApp *app) { return TwoRowBottom(app) ? 0.9f : 1.f; }
+
+    // The highest the world may move: the enemy window's top (game y ~53) stays below the top bar's buttons.
+    float MaxWorldLift(CApp *app) { return BaseZoom(app) * 307.f - 460.f; }
+
+    float PanelHeight(CApp *app);
+
+    // The ships move up (as far as the enemy window allows) to sit above the bottom panel, and a little right, away
+    // from the crew list.
     float WorldShiftY(CApp *app)
     {
         if (!TwoRowBottom(app)) return 0.f;
-        return -(std::max)(0.f, (std::min)(60.f, (float)ExtraY(app) - 157.f));
+        float panelTop = 720.f + (float)ExtraY(app) - PanelHeight(app);
+        float shift = panelTop - 8.f - 360.f - BaseZoom(app) * (525.f - 360.f); // the player ship ends about game y 525
+        return (std::max)(MaxWorldLift(app), (std::min)(0.f, shift));
     }
+
+    float WorldShiftX(CApp *app) { return TwoRowBottom(app) ? 50.f : 0.f; }
 
     // Systems/subsystems panel scale.
     float BottomScale(CApp *app)
@@ -187,12 +200,15 @@ namespace
             const char *value = std::getenv("FTL_FOLD_BOTTOM_SCALE");
             return value != nullptr ? (float)std::atof(value) : 0.f;
         }();
-        float target = forced >= 1.f ? forced : 1.7f;
-        // Both panel rows fit under the (shifted) player ship, whose lowest point is about game y 525.
-        float room = (float)ExtraY(app) + 720.f - (525.f + WorldShiftY(app)) - 4.f;
+        float target = forced >= 1.f ? forced : 2.2f;
+        // Both panel rows fit under the player ship, with the world lifted as far as it may go.
+        float shipBottom = 360.f + MaxWorldLift(app) + BaseZoom(app) * (525.f - 360.f);
+        float room = (float)ExtraY(app) + 720.f - shipBottom - 8.f;
         float fitY = room / ((720.f - SUBSYSTEM_ROW_TOP) + (720.f - BOTTOM_BAND_TOP));
         return (std::max)(s, (std::min)(target, fitY));
     }
+
+    float PanelHeight(CApp *app) { return BottomScale(app) * ((720.f - SUBSYSTEM_ROW_TOP) + (720.f - BOTTOM_BAND_TOP)); }
 
     // Right edge of the panel, in canvas x.
     float PanelRight(CApp *app)
@@ -208,8 +224,9 @@ namespace
         float b = BottomScale(app);
         if (!TwoRowBottom(app)) return b;
         float fitX = (1280.f + ExtraX(app) - 4.f - WeaponsX(app)) / 430.f;
-        // With drones, two rows sit under the enemy window (its lowest point is about game y 580).
-        float room = (float)ExtraY(app) + 720.f - (580.f + WorldShiftY(app)) - 4.f;
+        // With drones, two rows sit under the enemy window (enlarged, its lowest point is about game y 685).
+        float enemyBottom = 360.f + WorldShiftY(app) + BaseZoom(app) * (685.f - 360.f);
+        float room = (float)ExtraY(app) + 720.f - enemyBottom - 4.f;
         float fitY = HasDrones(app) ? room / 270.f : 10.f;
         return (std::max)(1.f, (std::min)(1.7f, (std::min)(fitX, fitY)));
     }
@@ -227,8 +244,19 @@ namespace
     }
 
     // The crew boxes and the save/return stations buttons under them.
-    float CrewScale(CApp *app) { return TwoRowBottom(app) ? 1.7f : HudScale(app); }
+    float CrewScale(CApp *app) { return TwoRowBottom(app) ? 2.f : HudScale(app); }
     const float CREW_PANEL_TOP = 145.f;
+    const float STATION_BUTTON_SCALE = 1.25f;
+
+    // The stations buttons (and their plates) grow down and right from their top-left corner.
+    bool StationsAnchor(CApp *app, float &ax, float &ay)
+    {
+        if (app->gui == nullptr || !TwoRowBottom(app)) return false;
+        CrewControl &crew = app->gui->crewControl;
+        ax = (float)(std::min)(crew.saveStations.hitbox.x, crew.returnStations.hitbox.x) - 4.f;
+        ay = (float)(std::min)(crew.saveStations.hitbox.y, crew.returnStations.hitbox.y) - 4.f;
+        return ax > 0.f && ax < 200.f && ay > 150.f && ay < 600.f;
+    }
 
     // A HUD group or window maps game point p to canvas point c + s * (p - a).
     struct Anchor
@@ -296,6 +324,10 @@ namespace
         return ax >= BOTTOM_RIGHT_LEFT && ax < 1280.f;
     }
 
+    float WZ(CApp *app) { return zoom * BaseZoom(app); }
+    float WX(CApp *app) { return panX + WorldShiftX(app); }
+    float WY(CApp *app) { return panY + WorldShiftY(app); }
+
     void ClampView(CApp *app)
     {
         zoom = (std::max)(MIN_ZOOM, (std::min)(MAX_ZOOM, zoom));
@@ -353,7 +385,7 @@ namespace
         {
             Point size = app->gui->combatControl.GetHostileBoxSize();
             float boxLeft = ax - t * size.x;
-            float canvasLeft = 640.f + panX + zoom * (boxLeft - 640.f);
+            float canvasLeft = 640.f + WX(app) + WZ(app) * (boxLeft - 640.f);
             room = canvasLeft + ex - 16.f;
         }
         s = (std::min)(s, (std::max)(1.3f, room / w));
@@ -382,8 +414,8 @@ namespace
         }
         if (region == Region::WORLD)
         {
-            CSurface::GL_Translate(640.f + panX, 360.f + panY + WorldShiftY(app), 0.f);
-            CSurface::GL_Scale(zoom, zoom, 1.f);
+            CSurface::GL_Translate(640.f + WX(app), 360.f + WY(app), 0.f);
+            CSurface::GL_Scale(WZ(app), WZ(app), 1.f);
             CSurface::GL_Translate(-640.f, -360.f, 0.f);
             return;
         }
@@ -411,8 +443,8 @@ namespace
         if (region == Region::WORLD)
         {
             CSurface::GL_Translate(640.f, 360.f, 0.f);
-            CSurface::GL_Scale(1.f / zoom, 1.f / zoom, 1.f);
-            CSurface::GL_Translate(-640.f - panX, -360.f - panY - WorldShiftY(app), 0.f);
+            CSurface::GL_Scale(1.f / WZ(app), 1.f / WZ(app), 1.f);
+            CSurface::GL_Translate(-640.f - WX(app), -360.f - WY(app), 0.f);
             return;
         }
         Anchor a = GetAnchor(app, region);
@@ -443,8 +475,8 @@ namespace
         }
         if (region == Region::WORLD)
         {
-            outX = 640.f + (x - 640.f - panX) / zoom;
-            outY = 360.f + (y - 360.f - panY - WorldShiftY(app)) / zoom;
+            outX = 640.f + (x - 640.f - WX(app)) / WZ(app);
+            outY = 360.f + (y - 360.f - WY(app)) / WZ(app);
             return;
         }
         if (region == Region::NONE)
@@ -473,8 +505,8 @@ namespace
         }
         if (region == Region::WORLD)
         {
-            cx = 640.f + panX + zoom * (x - 640.f);
-            cy = 360.f + panY + WorldShiftY(app) + zoom * (y - 360.f);
+            cx = 640.f + WX(app) + WZ(app) * (x - 640.f);
+            cy = 360.f + WY(app) + WZ(app) * (y - 360.f);
             return;
         }
         if (region == Region::NONE)
@@ -576,6 +608,19 @@ namespace
         }
 
         InverseMap(app, Region::CREW, x, y, gx, gy);
+        float sx, sy;
+        if (StationsAnchor(app, sx, sy) && gx >= sx && gy >= sy)
+        {
+            // Inside the enlarged stations buttons: the point on the buttons as FTL places them.
+            float ux = sx + (gx - sx) / STATION_BUTTON_SCALE, uy = sy + (gy - sy) / STATION_BUTTON_SCALE;
+            CrewControl &crew = gui->crewControl;
+            if (InsideRect(crew.saveStations.hitbox, (int)ux, (int)uy) || InsideRect(crew.returnStations.hitbox, (int)ux, (int)uy))
+            {
+                gx = ux;
+                gy = uy;
+                return Region::CREW;
+            }
+        }
         if (OnCrewPanel(gui, (int)gx, (int)gy)) return Region::CREW;
 
         InverseMap(app, Region::TOP_LEFT, x, y, gx, gy);
@@ -650,12 +695,12 @@ namespace
         float x = (float)(windowX - app->modifier_x);
         float y = (float)(windowY - app->modifier_y);
         // Keep the world point under the pointer where it is.
-        float worldX = 640.f + (x - 640.f - panX) / zoom;
-        float worldY = 360.f + (y - 360.f - panY - WorldShiftY(app)) / zoom;
+        float worldX = 640.f + (x - 640.f - WX(app)) / WZ(app);
+        float worldY = 360.f + (y - 360.f - WY(app)) / WZ(app);
         zoom *= factor;
         zoom = (std::max)(MIN_ZOOM, (std::min)(MAX_ZOOM, zoom));
-        panX = x - 640.f - (worldX - 640.f) * zoom;
-        panY = y - 360.f - WorldShiftY(app) - (worldY - 360.f) * zoom;
+        panX = x - 640.f - WorldShiftX(app) - (worldX - 640.f) * WZ(app);
+        panY = y - 360.f - WorldShiftY(app) - (worldY - 360.f) * WZ(app);
         ClampView(app);
     }
 
@@ -779,19 +824,24 @@ bool FoldLayoutToWindow(const std::string &region, float x, float y, int &window
             x = ax + t * (x - ax);
             y = ay + t * (y - ay);
         }
-        cx = 640.f + panX + zoom * (x - 640.f);
-        cy = 360.f + panY + WorldShiftY(app) + zoom * (y - 360.f);
+        cx = 640.f + WX(app) + WZ(app) * (x - 640.f);
+        cy = 360.f + WY(app) + WZ(app) * (y - 360.f);
     }
     else if (InGame(app) && region != "none" && region != "menu")
     {
         if (region == "world")
         {
-            cx = 640.f + panX + zoom * (x - 640.f);
-            cy = 360.f + panY + WorldShiftY(app) + zoom * (y - 360.f);
+            cx = 640.f + WX(app) + WZ(app) * (x - 640.f);
+            cy = 360.f + WY(app) + WZ(app) * (y - 360.f);
         }
         else
         {
             float dx, dy;
+            if (region == "st" && StationsAnchor(app, dx, dy))
+            {
+                x = dx + STATION_BUTTON_SCALE * (x - dx);
+                y = dy + STATION_BUTTON_SCALE * (y - dy);
+            }
             if (region == "door" && TwoRowBottom(app) && DoorAnchor(lastDoorBox, dx, dy))
             {
                 // A point of the doors box: enlarged inside the subsystems group.
@@ -801,7 +851,7 @@ bool FoldLayoutToWindow(const std::string &region, float x, float y, int &window
             }
             Region r = region == "tl" ? Region::TOP_LEFT : region == "bl" ? Region::BOTTOM_LEFT :
                        region == "br" || region == "door" ? Region::BOTTOM_RIGHT : region == "wp" ? Region::WEAPONS :
-                       region == "cr" ? Region::CREW : region == "dr" ? Region::DRONES : Region::MODAL;
+                       region == "cr" || region == "st" ? Region::CREW : region == "dr" ? Region::DRONES : Region::MODAL;
             Anchor a = GetAnchor(app, r);
             cx = a.cx + a.s * (x - a.ax);
             cy = a.cy + a.s * (y - a.ay);
@@ -930,12 +980,80 @@ HOOK_STATIC_PRIORITY(CSurface, GL_SetScissor, -10000, (int x, int y, int w, int 
 
 // ---- Rendering ----
 
+// ---- Touch buttons: Esc (game menu) and Pause, above the weapons at the bottom right ----
+
+namespace
+{
+    const float TOUCH_BUTTON_W = 112.f, TOUCH_BUTTON_H = 76.f, TOUCH_BUTTON_GAP = 10.f;
+    bool swallowLeftUp = false;
+
+    bool TouchButtonsShown(CApp *app)
+    {
+        return InGame(app) && TwoRowBottom(app) && !ModalOpen(app->gui);
+    }
+
+    // Button 0 = Esc, 1 = Pause, in canvas coordinates.
+    Globals::Rect TouchButtonRect(CApp *app, int index)
+    {
+        Anchor w = GetAnchor(app, Region::WEAPONS);
+        float bottom = w.cy - w.s * (720.f - BOTTOM_BAND_TOP) - 10.f;
+        float right = 1280.f + ExtraX(app) - 8.f - (1 - index) * (TOUCH_BUTTON_W + TOUCH_BUTTON_GAP);
+        return Globals::Rect({(int)(right - TOUCH_BUTTON_W), (int)(bottom - TOUCH_BUTTON_H), (int)TOUCH_BUTTON_W, (int)TOUCH_BUTTON_H});
+    }
+
+    int TouchButtonAt(CApp *app, int x, int y)
+    {
+        if (!TouchButtonsShown(app)) return -1;
+        for (int i = 0; i < 2; i++)
+        {
+            Globals::Rect r = TouchButtonRect(app, i);
+            if (x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h) return i;
+        }
+        return -1;
+    }
+
+    void PressKey(CApp *app, SDLKey key)
+    {
+        app->OnKeyDown(key);
+        app->OnKeyUp(key);
+    }
+
+    void RenderTouchButtons(CApp *app)
+    {
+        if (!TouchButtonsShown(app)) return;
+        static const char *labels[] = {"MENU", "PAUSE"};
+        for (int i = 0; i < 2; i++)
+        {
+            Globals::Rect r = TouchButtonRect(app, i);
+            bool active = i == 1 && app->gui->bPaused;
+            GL_Color fill = active ? GL_Color(0.85f, 0.55f, 0.1f, 0.9f) : GL_Color(0.06f, 0.1f, 0.12f, 0.85f);
+            CSurface::GL_DrawRect((float)r.x, (float)r.y, (float)r.w, (float)r.h, fill);
+            CSurface::GL_DrawRectOutline(r.x, r.y, r.w, r.h, GL_Color(0.78f, 0.92f, 0.86f, 1.f), 3.f);
+            CSurface::GL_SetColor(GL_Color(0.92f, 1.f, 0.96f, 1.f));
+            freetype::easy_printCenter(24, r.x + r.w / 2.f, r.y + r.h / 2.f - 12.f, labels[i]);
+            CSurface::GL_SetColor(GL_Color(1.f, 1.f, 1.f, 1.f));
+        }
+    }
+}
+
+// For the test harness: the window point at the centre of touch button 0 (menu) or 1 (pause).
+bool FoldLayoutTouchButton(int index, int &windowX, int &windowY)
+{
+    CApp *app = G_->GetCApp();
+    if (app == nullptr || !TouchButtonsShown(app)) return false;
+    Globals::Rect r = TouchButtonRect(app, index);
+    windowX = r.x + r.w / 2 + app->modifier_x;
+    windowY = r.y + r.h / 2 + app->modifier_y;
+    return true;
+}
+
 HOOK_METHOD_PRIORITY(CommandGui, RenderStatic, -10000, () -> void)
 {
     LOG_HOOK("HOOK_METHOD_PRIORITY -> CommandGui::RenderStatic -> Begin (FoldLayout.cpp)\n")
     inGuiRender = true;
     super();
     inGuiRender = false;
+    RenderTouchButtons(G_->GetCApp());
 }
 
 HOOK_METHOD_PRIORITY(MainMenu, OnRender, -10000, () -> void)
@@ -1209,6 +1327,22 @@ HOOK_METHOD_PRIORITY(Button, OnRender, -10000, () -> void)
     Region region = Region::NONE;
     if (gui != nullptr && (this == &gui->upgradeButton || this == &gui->optionsButton)) region = Region::TOP_LEFT;
     RegionScope scope(region);
+    CApp *app = G_->GetCApp();
+    float sx, sy;
+    if (gui != nullptr && inGuiRender && InGame(app) && (this == &gui->crewControl.saveStations || this == &gui->crewControl.returnStations) &&
+        StationsAnchor(app, sx, sy))
+    {
+        // Drawn bigger, with its plate (FTL's own smaller plate is covered).
+        CSurface::GL_PushMatrix();
+        CSurface::GL_Translate(sx, sy, 0.f);
+        CSurface::GL_Scale(STATION_BUTTON_SCALE, STATION_BUTTON_SCALE, 1.f);
+        CSurface::GL_Translate(-sx, -sy, 0.f);
+        GL_Primitive *plate = this == &gui->crewControl.saveStations ? gui->crewControl.saveStationsBase : gui->crewControl.returnStationsBase;
+        if (plate != nullptr) CSurface::GL_RenderPrimitive(plate);
+        super();
+        CSurface::GL_PopMatrix();
+        return;
+    }
     super();
 }
 
@@ -1435,6 +1569,13 @@ HOOK_METHOD_PRIORITY(CApp, OnMButtonDown, -10000, (int x, int y) -> void)
 HOOK_METHOD_PRIORITY(CApp, OnLButtonDown, -10000, (int x, int y) -> void)
 {
     LOG_HOOK("HOOK_METHOD_PRIORITY -> CApp::OnLButtonDown -> Begin (FoldLayout.cpp)\n")
+    int button = TouchButtonAt(this, x - modifier_x, y - modifier_y);
+    if (button != -1)
+    {
+        swallowLeftUp = true;
+        PressKey(this, button == 0 ? SDLK_ESCAPE : SDLK_SPACE);
+        return;
+    }
     dragging = false;
     MapWindowPoint(this, x, y, true);
     pressRegion = lastRegion;
@@ -1444,6 +1585,11 @@ HOOK_METHOD_PRIORITY(CApp, OnLButtonDown, -10000, (int x, int y) -> void)
 HOOK_METHOD_PRIORITY(CApp, OnLButtonUp, -10000, (int x, int y) -> void)
 {
     LOG_HOOK("HOOK_METHOD_PRIORITY -> CApp::OnLButtonUp -> Begin (FoldLayout.cpp)\n")
+    if (swallowLeftUp)
+    {
+        swallowLeftUp = false;
+        return;
+    }
     MapWindowPoint(this, x, y);
     dragging = false;
     super(x, y);

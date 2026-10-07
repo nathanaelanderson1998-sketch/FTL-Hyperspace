@@ -32,6 +32,7 @@ void FoldLayoutWheel(CApp *app, int windowX, int windowY, float notches); // Fol
 const char *FoldLayoutDescribe();                                       // FoldLayout.cpp
 int FoldLayoutChoiceOnScreen(); // FoldLayout.cpp
 int FoldLayoutTooltipOnScreen(); // FoldLayout.cpp
+bool FoldLayoutTouchButton(int index, int &windowX, int &windowY); // FoldLayout.cpp
 bool FoldLayoutToWindow(const std::string &region, float x, float y, int &windowX, int &windowY); // FoldLayout.cpp
 
 namespace
@@ -136,6 +137,7 @@ namespace
         state["choice_onscreen"] = std::to_string(FoldLayoutChoiceOnScreen());
         state["tooltip_onscreen"] = std::to_string(FoldLayoutTooltipOnScreen());
         state["store"] = std::to_string((int)gui->storeScreens.bOpen);
+        state["pausemenu"] = std::to_string((int)gui->menuBox.bOpen);
         state["ship"] = std::to_string((int)gui->shipScreens.bOpen);
         state["enemy"] = std::to_string((int)(gui->combatControl.currentTarget != nullptr));
         auto pt = [](const Point &p) { return std::to_string(p.x) + "," + std::to_string(p.y); };
@@ -269,6 +271,13 @@ namespace
             }
             return false;
         }
+        if (first == "button")
+        {
+            // A touch button: "button menu" or "button pause".
+            std::string which;
+            in >> which;
+            return FoldLayoutTouchButton(which == "pause" ? 1 : 0, x, y);
+        }
         if (first == "beacon")
         {
             // Near (dx, dy away from) the Nth beacon connected to the current one, on the open star map.
@@ -286,7 +295,7 @@ namespace
             }
             return false;
         }
-        if (first == "tl" || first == "bl" || first == "br" || first == "wp" || first == "cr" || first == "dr" || first == "door" || first == "target" || first == "menu" ||
+        if (first == "tl" || first == "bl" || first == "br" || first == "wp" || first == "cr" || first == "dr" || first == "door" || first == "st" || first == "target" || first == "menu" ||
             first == "world" || first == "modal" || first == "none")
         {
             float gx = 0.f, gy = 0.f;
