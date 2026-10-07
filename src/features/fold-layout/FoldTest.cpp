@@ -1,5 +1,7 @@
 #include "Global.h"
 
+#include <algorithm>
+
 #ifdef _WIN32
 
 #include <windows.h>
@@ -148,6 +150,13 @@ namespace
             }
         }
         state["autofire"] = std::to_string((int)gui->combatControl.weapControl.autoFiring);
+        state["weap_x"] = pt(gui->combatControl.weapControl.location);
+        state["drone_x"] = pt(gui->combatControl.droneControl.location);
+        if (gui->starMap != nullptr && gui->starMap->currentLoc != nullptr)
+        {
+            auto &locs = gui->starMap->locations;
+            state["loc"] = std::to_string((int)(std::find(locs.begin(), locs.end(), gui->starMap->currentLoc) - locs.begin()));
+        }
         state["sel"] = std::to_string((int)gui->crewControl.selectedCrew.size());
         state["armed"] = std::to_string(gui->combatControl.weapControl.armedWeapon != nullptr ? gui->combatControl.weapControl.armedSlot : -1);
 
@@ -254,7 +263,24 @@ namespace
             }
             return false;
         }
-        if (first == "tl" || first == "bl" || first == "br" || first == "world" || first == "modal" || first == "none")
+        if (first == "beacon")
+        {
+            // Near (dx, dy away from) the Nth beacon connected to the current one, on the open star map.
+            int index = 0, n = 0;
+            float dx = 0.f, dy = 0.f;
+            in >> index >> dx >> dy;
+            CApp *app = G_->GetCApp();
+            StarMap *map = app != nullptr && app->gui != nullptr ? app->gui->starMap : nullptr;
+            if (map == nullptr || map->currentLoc == nullptr) return false;
+            for (Location *loc : map->currentLoc->connectedLocations)
+            {
+                if (loc == nullptr || n++ != index) continue;
+                return FoldLayoutToWindow("modal", map->position.x + map->translation.x + loc->loc.x + dx,
+                                          map->position.y + map->translation.y + loc->loc.y + dy, x, y);
+            }
+            return false;
+        }
+        if (first == "tl" || first == "bl" || first == "br" || first == "wp" || first == "world" || first == "modal" || first == "none")
         {
             float gx = 0.f, gy = 0.f;
             in >> gx >> gy;

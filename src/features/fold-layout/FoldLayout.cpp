@@ -29,8 +29,9 @@ Button *GetMoreInfoButton(); // game/UserInterface/MoreInfoButton.cpp
 namespace
 {
     // HUD groups, each pinned to a canvas corner and scaled up around it; WORLD = ships and space (zoom/pan);
-    // MODAL = the star map or an event box, scaled up around the canvas centre.
-    enum class Region { NONE, TOP_LEFT, BOTTOM_LEFT, BOTTOM_RIGHT, WORLD, MODAL };
+    // MODAL = the star map or an event box, scaled up around the canvas centre. WEAPONS = the weapon and drone
+    // boxes: part of the bottom-left group, or a row of their own above it on a tall canvas.
+    enum class Region { NONE, TOP_LEFT, BOTTOM_LEFT, BOTTOM_RIGHT, WORLD, MODAL, WEAPONS };
 
     // HUD bands in the game's own 1280x720 coordinates.
     const int TOP_BAND_BOTTOM = 145;    // hull, shields, evade/O2, resources, FTL/ship/store/options buttons
@@ -117,16 +118,55 @@ namespace
         return (std::max)(1.f, (std::min)(1.4f, scale));
     }
 
+    // The star map window is about 750x580 in game coordinates: let it fill the canvas width.
     float ModalScale(CApp *app)
     {
-        float scale = (std::min)((float)app->screen_x / 800.f, (float)app->screen_y / 640.f);
-        return (std::max)(1.f, (std::min)(1.45f, scale));
+        float scale = (std::min)((float)app->screen_x / 760.f, (float)app->screen_y / 600.f);
+        return (std::max)(1.f, (std::min)(1.68f, scale));
+    }
+
+    // On a tall canvas (the Fold's inner screen) the weapon and drone boxes get a row of their own above the
+    // systems, which leaves room to enlarge the bottom HUD further than the top one.
+    bool TwoRowBottom(CApp *app) { return ExtraY(app) >= 150; }
+
+    // Where the weapon (or drone) boxes start, in game x; the systems end there.
+    float WeaponsLeft(CApp *app)
+    {
+        if (app->gui == nullptr) return 245.f;
+        CombatControl &combat = app->gui->combatControl;
+        int x = combat.weapControl.location.x;
+        if (x < 100 || x > 800) x = combat.droneControl.location.x;
+        return (x < 100 || x > 800) ? 245.f : (float)x;
+    }
+
+    // The ships move up a little to make room for the two bottom rows.
+    float WorldShiftY(CApp *app)
+    {
+        if (!TwoRowBottom(app)) return 0.f;
+        return -(std::max)(0.f, (std::min)(40.f, (float)ExtraY(app) - 177.f));
+    }
+
+    float BottomScale(CApp *app)
+    {
+        float s = HudScale(app);
+        if (!TwoRowBottom(app)) return s;
+        static const float forced = []
+        {
+            const char *value = std::getenv("FTL_FOLD_BOTTOM_SCALE");
+            return value != nullptr ? (float)std::atof(value) : 0.f;
+        }();
+        float target = forced >= 1.f ? forced : 1.7f;
+        // Systems and subsystems share the bottom row; both rows (130 + 115 game px tall) fit under the ships.
+        float fitX = (1280.f + 2.f * ExtraX(app) - 12.f) / (WeaponsLeft(app) + (1280.f - BOTTOM_RIGHT_LEFT));
+        float fitY = ((float)ExtraY(app) + 240.f) / 245.f;
+        return (std::max)(s, (std::min)(target, (std::min)(fitX, fitY)));
     }
 
     // Drones make the bottom-left group so wide that, enlarged, it would reach the subsystems: lift those a row.
     bool BottomRightLifted(CApp *app)
     {
-        float s = HudScale(app);
+        if (TwoRowBottom(app)) return false;
+        float s = BottomScale(app);
         ShipManager *ship = app->gui->shipComplete != nullptr ? app->gui->shipComplete->shipManager : nullptr;
         bool drones = ship != nullptr && ship->HasSystem(4); // drone control
         float bottomLeftRight = -ExtraX(app) + s * (drones ? 905.f : 645.f);
@@ -142,16 +182,20 @@ namespace
 
     Anchor GetAnchor(CApp *app, Region region)
     {
-        float ex = (float)ExtraX(app), ey = (float)ExtraY(app), s = HudScale(app);
+        float ex = (float)ExtraX(app), ey = (float)ExtraY(app), s = HudScale(app), b = BottomScale(app);
         switch (region)
         {
         case Region::TOP_LEFT: return {0.f, 0.f, -ex, -ey, s};
-        case Region::BOTTOM_LEFT: return {0.f, 720.f, -ex, 720.f + ey, s};
+        case Region::BOTTOM_LEFT: return {0.f, 720.f, -ex, 720.f + ey, b};
         case Region::BOTTOM_RIGHT:
         {
-            float lift = BottomRightLifted(app) ? s * (720.f - BOTTOM_BAND_TOP + 10.f) : 0.f;
-            return {1280.f, 720.f, 1280.f + ex, 720.f + ey - lift, s};
+            float lift = BottomRightLifted(app) ? b * (720.f - BOTTOM_BAND_TOP + 10.f) : 0.f;
+            return {1280.f, 720.f, 1280.f + ex, 720.f + ey - lift, b};
         }
+        case Region::WEAPONS:
+            if (!TwoRowBottom(app)) return {0.f, 720.f, -ex, 720.f + ey, b};
+            // Left-aligned, sitting on top of the systems row.
+            return {WeaponsLeft(app) - 8.f, 720.f, -ex + 4.f, 720.f + ey - b * (720.f - BOTTOM_BAND_TOP), b};
         case Region::MODAL:
             // The star map window sits right of centre in the 1280x720 layout; centre it on the canvas.
             if (StarMapOpen(app->gui)) return {715.f, 375.f, 640.f, 360.f, ModalScale(app)};
@@ -178,7 +222,7 @@ namespace
     {
         if (region == Region::WORLD)
         {
-            CSurface::GL_Translate(640.f + panX, 360.f + panY, 0.f);
+            CSurface::GL_Translate(640.f + panX, 360.f + panY + WorldShiftY(app), 0.f);
             CSurface::GL_Scale(zoom, zoom, 1.f);
             CSurface::GL_Translate(-640.f, -360.f, 0.f);
             return;
@@ -196,7 +240,7 @@ namespace
         {
             CSurface::GL_Translate(640.f, 360.f, 0.f);
             CSurface::GL_Scale(1.f / zoom, 1.f / zoom, 1.f);
-            CSurface::GL_Translate(-640.f - panX, -360.f - panY, 0.f);
+            CSurface::GL_Translate(-640.f - panX, -360.f - panY - WorldShiftY(app), 0.f);
             return;
         }
         Anchor a = GetAnchor(app, region);
@@ -217,7 +261,7 @@ namespace
         if (region == Region::WORLD)
         {
             outX = 640.f + (x - 640.f - panX) / zoom;
-            outY = 360.f + (y - 360.f - panY) / zoom;
+            outY = 360.f + (y - 360.f - panY - WorldShiftY(app)) / zoom;
             return;
         }
         if (region == Region::NONE)
@@ -262,8 +306,23 @@ namespace
         InverseMap(app, Region::BOTTOM_RIGHT, x, y, gx, gy);
         if (gy >= BOTTOM_BAND_TOP && gy < 720.f && gx >= BOTTOM_RIGHT_LEFT && gx < 1280.f) return Region::BOTTOM_RIGHT;
 
+        if (TwoRowBottom(app))
+        {
+            InverseMap(app, Region::WEAPONS, x, y, gx, gy);
+            if (gy >= BOTTOM_BAND_TOP && gy < 720.f && gx >= WeaponsLeft(app) - 8.f && gx < BOTTOM_RIGHT_LEFT) return Region::WEAPONS;
+        }
+
         InverseMap(app, Region::BOTTOM_LEFT, x, y, gx, gy);
-        if (gy >= BOTTOM_BAND_TOP && gx < BOTTOM_RIGHT_LEFT) return Region::BOTTOM_LEFT;
+        if (gy >= BOTTOM_BAND_TOP && gx < BOTTOM_RIGHT_LEFT)
+        {
+            // In the two-row layout the weapons are no longer drawn right of the systems: nothing to hit there.
+            if (TwoRowBottom(app) && gx >= WeaponsLeft(app))
+            {
+                gx = -10000.f;
+                gy = -10000.f;
+            }
+            return Region::BOTTOM_LEFT;
+        }
 
         InverseMap(app, Region::TOP_LEFT, x, y, gx, gy);
         if (InTopBand((int)gx, (int)gy) || OnCrewPanel(gui, (int)gx, (int)gy)) return Region::TOP_LEFT;
@@ -318,11 +377,11 @@ namespace
         float y = (float)(windowY - app->modifier_y);
         // Keep the world point under the pointer where it is.
         float worldX = 640.f + (x - 640.f - panX) / zoom;
-        float worldY = 360.f + (y - 360.f - panY) / zoom;
+        float worldY = 360.f + (y - 360.f - panY - WorldShiftY(app)) / zoom;
         zoom *= factor;
         zoom = (std::max)(MIN_ZOOM, (std::min)(MAX_ZOOM, zoom));
         panX = x - 640.f - (worldX - 640.f) * zoom;
-        panY = y - 360.f - (worldY - 360.f) * zoom;
+        panY = y - 360.f - WorldShiftY(app) - (worldY - 360.f) * zoom;
         ClampView(app);
     }
 
@@ -394,17 +453,19 @@ namespace
 
 // ---- Window / clip ----
 
-// Hyperspace's More Info button is drawn from the top-left group but belongs in the bottom-right one: the
-// translation that moves it there from inside the top-left transform (both groups share one scale).
-bool FoldLayoutShiftTopLeftToBottomRight(float &dx, float &dy)
+// Hyperspace's More Info button is drawn from the top-left group but belongs in the bottom-right one: switches
+// from the top-left transform to the bottom-right one until FoldLayoutPopMatrix().
+bool FoldLayoutPushTopLeftToBottomRight()
 {
     CApp *app = G_->GetCApp();
     if (!inGuiRender || !InGame(app)) return false;
-    Anchor tl = GetAnchor(app, Region::TOP_LEFT), br = GetAnchor(app, Region::BOTTOM_RIGHT);
-    dx = tl.ax - br.ax + (br.cx - tl.cx) / tl.s;
-    dy = tl.ay - br.ay + (br.cy - tl.cy) / tl.s;
+    CSurface::GL_PushMatrix();
+    ApplyInverse(app, Region::TOP_LEFT);
+    ApplyTransform(app, Region::BOTTOM_RIGHT);
     return true;
 }
+
+void FoldLayoutPopMatrix() { CSurface::GL_PopMatrix(); }
 
 // For the test harness: where a game point in a region ("tl", "bl", "br", "world", "modal", "none") is on the
 // window right now, so test taps land on controls whatever the canvas size and zoom.
@@ -418,12 +479,12 @@ bool FoldLayoutToWindow(const std::string &region, float x, float y, int &window
         if (region == "world")
         {
             cx = 640.f + panX + zoom * (x - 640.f);
-            cy = 360.f + panY + zoom * (y - 360.f);
+            cy = 360.f + panY + WorldShiftY(app) + zoom * (y - 360.f);
         }
         else
         {
             Region r = region == "tl" ? Region::TOP_LEFT : region == "bl" ? Region::BOTTOM_LEFT :
-                       region == "br" ? Region::BOTTOM_RIGHT : Region::MODAL;
+                       region == "br" ? Region::BOTTOM_RIGHT : region == "wp" ? Region::WEAPONS : Region::MODAL;
             Anchor a = GetAnchor(app, r);
             cx = a.cx + a.s * (x - a.ax);
             cy = a.cy + a.s * (y - a.ay);
@@ -437,12 +498,13 @@ bool FoldLayoutToWindow(const std::string &region, float x, float y, int &window
 // For the test harness: where the last input landed, and the view.
 const char *FoldLayoutDescribe()
 {
-    static char text[160];
-    static const char *names[] = {"none", "top-left", "bottom-left", "bottom-right", "world", "modal"};
+    static char text[220];
+    static const char *names[] = {"none", "top-left", "bottom-left", "bottom-right", "world", "modal", "weapons"};
     CApp *app = G_->GetCApp();
     bool game = app != nullptr && InGame(app);
-    std::snprintf(text, sizeof(text), "region=%s zoom=%.2f pan=%.0f,%.0f hudScale=%.2f lifted=%d", names[(int)lastRegion], zoom, panX, panY,
-                  game ? HudScale(app) : 0.f, game ? (int)BottomRightLifted(app) : 0);
+    std::snprintf(text, sizeof(text), "region=%s zoom=%.2f pan=%.0f,%.0f hudScale=%.2f bottomScale=%.2f modalScale=%.2f twoRow=%d lifted=%d",
+                  names[(int)lastRegion], zoom, panX, panY, game ? HudScale(app) : 0.f, game ? BottomScale(app) : 0.f,
+                  game ? ModalScale(app) : 0.f, game ? (int)TwoRowBottom(app) : 0, game ? (int)BottomRightLifted(app) : 0);
     return text;
 }
 
@@ -592,7 +654,7 @@ HOOK_METHOD_PRIORITY(CombatControl, OnRenderCombat, -10000, () -> void)
 HOOK_METHOD_PRIORITY(CombatControl, OnRenderInterface, -10000, (bool front) -> void)
 {
     LOG_HOOK("HOOK_METHOD_PRIORITY -> CombatControl::OnRenderInterface -> Begin (FoldLayout.cpp)\n")
-    RegionScope scope(Region::BOTTOM_LEFT);
+    RegionScope scope(Region::WEAPONS);
     super(front);
 }
 
@@ -609,7 +671,7 @@ HOOK_METHOD_PRIORITY(SystemControl, OnRender, -10000, (bool front) -> void)
 
     // It draws the systems (bottom-left) and the subsystems (bottom-right) in one go: draw it once per corner,
     // each pass clipped to the part of the canvas that corner owns.
-    float split = app->modifier_x - ExtraX(app) + HudScale(app) * BOTTOM_RIGHT_LEFT; // window x of the split, left pass
+    float split = app->modifier_x - ExtraX(app) + BottomScale(app) * BOTTOM_RIGHT_LEFT; // window x of the split, left pass
     Anchor br = GetAnchor(app, Region::BOTTOM_RIGHT);
     float rightStart = app->modifier_x + br.cx - br.s * (br.ax - BOTTOM_RIGHT_LEFT);
     glEnable(GL_SCISSOR_TEST);
@@ -721,6 +783,21 @@ HOOK_METHOD_PRIORITY(CombatControl, OnRenderTooltips, -10000, () -> void)
     super();
 }
 
+// FTL_HIDE_CURSOR=1 (set by the Android launcher): a touch screen has no pointer, so the cursor and the icons that
+// follow it are not drawn; tooltips still are. MouseControl::OnRender draws both, so colour writes are switched off
+// for it and back on for the tooltip.
+static bool HideCursor()
+{
+    static const bool hide = []
+    {
+        const char *value = std::getenv("FTL_HIDE_CURSOR");
+        return value != nullptr && value[0] == '1';
+    }();
+    return hide;
+}
+
+static bool cursorMasked = false;
+
 HOOK_METHOD_PRIORITY(MouseControl, OnRender, -10000, () -> void)
 {
     LOG_HOOK("HOOK_METHOD_PRIORITY -> MouseControl::OnRender -> Begin (FoldLayout.cpp)\n")
@@ -731,8 +808,86 @@ HOOK_METHOD_PRIORITY(MouseControl, OnRender, -10000, () -> void)
         PushRegion(app, lastRegion);
         pushed = true;
     }
+    cursorMasked = HideCursor() && app != nullptr && !app->useDirect3D;
+    if (cursorMasked) glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
     super();
+    if (cursorMasked) glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+    cursorMasked = false;
     if (pushed) CSurface::GL_PopMatrix();
+}
+
+HOOK_METHOD_PRIORITY(MouseControl, RenderTooltip, -10000, (Point tooltipPoint, bool staticPos) -> void)
+{
+    LOG_HOOK("HOOK_METHOD_PRIORITY -> MouseControl::RenderTooltip -> Begin (FoldLayout.cpp)\n")
+    if (cursorMasked) glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+    super(tooltipPoint, staticPos);
+    if (cursorMasked) glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
+}
+
+// ---- Star map: beacons and sectors are small for a finger, so a touch near one counts as touching it ----
+
+static bool OnButton(const GenericButton &button, int x, int y)
+{
+    return button.bActive && x >= button.hitbox.x && x < button.hitbox.x + button.hitbox.w && y >= button.hitbox.y && y < button.hitbox.y + button.hitbox.h;
+}
+
+static void SnapToStarMapTarget(StarMap *map, int &x, int &y)
+{
+    CApp *app = G_->GetCApp();
+    if (!InGame(app) || !map->bOpen) return;
+    if (OnButton(map->endButton, x, y) || OnButton(map->waitButton, x, y) || OnButton(map->distressButton, x, y) ||
+        OnButton(map->jumpButton, x, y) || OnButton(map->closeButton, x, y) || OnButton(map->closeSectorButton, x, y)) return;
+
+    const float radius = 34.f;
+    float best = radius * radius;
+    float bestX = 0.f, bestY = 0.f;
+    bool found = false;
+    auto consider = [&](float cx, float cy)
+    {
+        float d = (cx - x) * (cx - x) + (cy - y) * (cy - y);
+        if (d < best)
+        {
+            best = d;
+            bestX = cx;
+            bestY = cy;
+            found = true;
+        }
+    };
+    if (map->bChoosingNewSector)
+    {
+        for (const Globals::Rect &r : map->sectorHitBoxes)
+        {
+            int rx = map->sectorMapOffset.x + r.x, ry = map->sectorMapOffset.y + r.y;
+            if (x > rx && x < rx + r.w && y > ry && y < ry + r.h) return; // already on one
+            consider(rx + r.w / 2.f, ry + r.h / 2.f);
+        }
+    }
+    else
+    {
+        for (Location *loc : map->locations)
+        {
+            if (loc != nullptr) consider(map->position.x + map->translation.x + loc->loc.x, map->position.y + map->translation.y + loc->loc.y);
+        }
+    }
+    if (found)
+    {
+        x = (int)std::lround(bestX);
+        y = (int)std::lround(bestY);
+    }
+}
+
+HOOK_METHOD_PRIORITY(StarMap, MouseMove, -10000, (int x, int y) -> void)
+{
+    LOG_HOOK("HOOK_METHOD_PRIORITY -> StarMap::MouseMove -> Begin (FoldLayout.cpp)\n")
+    SnapToStarMapTarget(this, x, y);
+    super(x, y);
+}
+
+HOOK_METHOD_PRIORITY(StarMap, MouseClick, -10000, (int x, int y) -> void)
+{
+    LOG_HOOK("HOOK_METHOD_PRIORITY -> StarMap::MouseClick -> Begin (FoldLayout.cpp)\n")
+    SnapToStarMapTarget(this, x, y);
+    super(x, y);
 }
 
 // ---- Input ----
@@ -801,7 +956,8 @@ HOOK_METHOD_PRIORITY(CApp, OnRButtonUp, -10000, (int x, int y) -> void)
 
 #else
 
-bool FoldLayoutShiftTopLeftToBottomRight(float &dx, float &dy) { return false; }
+bool FoldLayoutPushTopLeftToBottomRight() { return false; }
+void FoldLayoutPopMatrix() {}
 const char *FoldLayoutDescribe() { return ""; }
 
 #endif // _WIN32
