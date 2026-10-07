@@ -457,6 +457,36 @@ namespace
         outY = a.ay + (y - a.cy) / a.s;
     }
 
+    // Game point in a region -> the canvas point where it is drawn now.
+    void ToCanvas(CApp *app, Region region, float x, float y, float &cx, float &cy)
+    {
+        if (region == Region::TARGET)
+        {
+            float ax, ay, t;
+            if (TargetAnchor(app, ax, ay, t))
+            {
+                x = ax + t * (x - ax);
+                y = ay + t * (y - ay);
+            }
+            region = Region::WORLD;
+        }
+        if (region == Region::WORLD)
+        {
+            cx = 640.f + panX + zoom * (x - 640.f);
+            cy = 360.f + panY + WorldShiftY(app) + zoom * (y - 360.f);
+            return;
+        }
+        if (region == Region::NONE)
+        {
+            cx = x;
+            cy = y;
+            return;
+        }
+        Anchor a = GetAnchor(app, region);
+        cx = a.cx + a.s * (x - a.ax);
+        cy = a.cy + a.s * (y - a.ay);
+    }
+
     bool InsideRect(const Globals::Rect &rect, int x, int y)
     {
         return x >= rect.x && x < rect.x + rect.w && y >= rect.y && y < rect.y + rect.h;
@@ -1219,55 +1249,86 @@ static bool HideCursor()
 }
 
 static bool cursorMasked = false;
+static int tooltipFrame = -100, renderFrame = 0;
+static float tooltipLeft = 0.f, tooltipTop = 0.f, tooltipRight = 0.f, tooltipBottom = 0.f;
 
 HOOK_METHOD_PRIORITY(MouseControl, OnRender, -10000, () -> void)
 {
     LOG_HOOK("HOOK_METHOD_PRIORITY -> MouseControl::OnRender -> Begin (FoldLayout.cpp)\n")
     CApp *app = G_->GetCApp();
+    renderFrame++;
     bool pushed = false;
+    Region saved = activeRegion;
     if (lastRegion != Region::NONE && InGame(app))
     {
         PushRegion(app, lastRegion);
         pushed = true;
+        activeRegion = lastRegion;
     }
     cursorMasked = HideCursor() && app != nullptr && !app->useDirect3D;
     if (cursorMasked) glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
     super();
     if (cursorMasked) glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
     cursorMasked = false;
+    activeRegion = saved;
     if (pushed) CSurface::GL_PopMatrix();
 }
 
+// FTL keeps tooltips inside its own 1280x720 area, which no longer matches where the HUD is drawn, so every tooltip
+// drawn over a moved or scaled part of the screen is placed here, on the canvas: one that follows the pointer goes
+// centred above the finger (below it if there is no room); one FTL pins to a spot (e.g. above a weapon) goes where
+// that spot is drawn now. Either way it is kept wholly on the canvas.
 HOOK_METHOD_PRIORITY(MouseControl, RenderTooltip, -10000, (Point tooltipPoint, bool staticPos) -> void)
 {
     LOG_HOOK("HOOK_METHOD_PRIORITY -> MouseControl::RenderTooltip -> Begin (FoldLayout.cpp)\n")
     if (cursorMasked) glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
     CApp *app = G_->GetCApp();
-    if (staticPos || lastRegion == Region::NONE || !InGame(app))
+    Region region = activeRegion != Region::NONE ? activeRegion : lastRegion;
+    if (region == Region::NONE || !InGame(app))
     {
         super(tooltipPoint, staticPos);
     }
     else
     {
-        // FTL keeps tooltips inside its own 1280x720 area, which no longer matches where the HUD is drawn. Place
-        // the box here instead: centred above the finger (below it if there is no room), on the canvas.
-        float ts = lastRegion == Region::WORLD ? HudScale(app) : (std::min)(1.7f, GetAnchor(app, lastRegion).s);
+        float ts = region == Region::WORLD || region == Region::TARGET ? HudScale(app) : (std::min)(1.7f, GetAnchor(app, region).s);
         int width = overrideTooltipWidth > 0 ? overrideTooltipWidth : 350;
         Point size = MeasureTooltip(width);
         float w = ts * (size.x + 36.f), h = ts * (size.y + 36.f);
         float ex = (float)ExtraX(app), ey = (float)ExtraY(app);
-        float cx = pointerX - w / 2.f;
-        float cy = pointerY - h - 24.f;
-        if (cy < -ey + 4.f) cy = pointerY + 36.f;
+        float cx, cy;
+        if (staticPos)
+        {
+            ToCanvas(app, region, (float)tooltipPoint.x, (float)tooltipPoint.y, cx, cy);
+        }
+        else
+        {
+            cx = pointerX - w / 2.f;
+            cy = pointerY - h - 24.f;
+            if (cy < -ey + 4.f) cy = pointerY + 36.f;
+        }
         cx = (std::max)(-ex + 4.f, (std::min)(1280.f + ex - 4.f - w, cx));
         cy = (std::max)(-ey + 4.f, (std::min)(720.f + ey - 4.f - h, cy));
+        tooltipFrame = renderFrame;
+        tooltipLeft = cx;
+        tooltipTop = cy;
+        tooltipRight = cx + w;
+        tooltipBottom = cy + h;
         CSurface::GL_PushMatrix();
-        ApplyInverse(app, lastRegion);
+        if (activeRegion != Region::NONE) ApplyInverse(app, activeRegion);
         CSurface::GL_Scale(ts, ts, 1.f);
         super(Point((int)(cx / ts), (int)(cy / ts)), true);
         CSurface::GL_PopMatrix();
     }
     if (cursorMasked) glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
+}
+
+// For the test harness: whether the tooltip drawn in the last frames is wholly on the canvas (-1: none drawn).
+int FoldLayoutTooltipOnScreen()
+{
+    CApp *app = G_->GetCApp();
+    if (app == nullptr || renderFrame - tooltipFrame > 3) return -1;
+    float ex = (float)ExtraX(app), ey = (float)ExtraY(app);
+    return tooltipLeft >= -ex - 1.f && tooltipRight <= 1280.f + ex + 1.f && tooltipTop >= -ey - 1.f && tooltipBottom <= 720.f + ey + 1.f;
 }
 
 // ---- Star map: beacons and sectors are small for a finger, so a touch near one counts as touching it ----
@@ -1404,6 +1465,7 @@ HOOK_METHOD_PRIORITY(CApp, OnRButtonUp, -10000, (int x, int y) -> void)
 
 bool FoldLayoutPushTopLeftToBottomRight() { return false; }
 int FoldLayoutChoiceOnScreen() { return -1; }
+int FoldLayoutTooltipOnScreen() { return -1; }
 void FoldLayoutPopMatrix() {}
 const char *FoldLayoutDescribe() { return ""; }
 

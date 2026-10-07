@@ -31,6 +31,7 @@
 void FoldLayoutWheel(CApp *app, int windowX, int windowY, float notches); // FoldLayout.cpp
 const char *FoldLayoutDescribe();                                       // FoldLayout.cpp
 int FoldLayoutChoiceOnScreen(); // FoldLayout.cpp
+int FoldLayoutTooltipOnScreen(); // FoldLayout.cpp
 bool FoldLayoutToWindow(const std::string &region, float x, float y, int &windowX, int &windowY); // FoldLayout.cpp
 
 namespace
@@ -133,6 +134,7 @@ namespace
         state["map"] = std::to_string((int)(gui->starMap != nullptr && gui->starMap->bOpen));
         state["choice"] = std::to_string((int)gui->choiceBox.bOpen);
         state["choice_onscreen"] = std::to_string(FoldLayoutChoiceOnScreen());
+        state["tooltip_onscreen"] = std::to_string(FoldLayoutTooltipOnScreen());
         state["store"] = std::to_string((int)gui->storeScreens.bOpen);
         state["ship"] = std::to_string((int)gui->shipScreens.bOpen);
         state["enemy"] = std::to_string((int)(gui->combatControl.currentTarget != nullptr));
