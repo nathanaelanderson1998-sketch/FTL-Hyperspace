@@ -41,3 +41,30 @@ HOOK_METHOD(CrewControl, LButton, (int mX, int mY, int wX, int wY, bool shiftHel
     }
     super(mX, mY, wX, wY, shiftHeld);
 }
+
+// Drag-to-aim beams: FTL sets a beam's start on one click and its end on the next; releasing the button does
+// nothing. A finger naturally drags across the ship instead, so a release far enough from the press that started
+// the beam counts as that second click.
+static bool beamDragPending = false;
+static Point beamDragStart;
+
+HOOK_METHOD(CombatControl, MouseClick, (int mX, int mY, bool shift) -> void)
+{
+    LOG_HOOK("HOOK_METHOD -> CombatControl::MouseClick -> Begin (TapToMove.cpp)\n")
+    bool wasEmpty = aimingPoints.empty();
+    super(mX, mY, shift);
+    beamDragPending = TapToMoveEnabled() && wasEmpty && aimingPoints.size() == 1;
+    beamDragStart = Point(mX, mY);
+}
+
+HOOK_METHOD(CombatControl, MouseUp, (int mX, int mY) -> void)
+{
+    LOG_HOOK("HOOK_METHOD -> CombatControl::MouseUp -> Begin (TapToMove.cpp)\n")
+    super(mX, mY);
+    if (!beamDragPending) return;
+    beamDragPending = false;
+    int dx = mX - beamDragStart.x, dy = mY - beamDragStart.y;
+    if (aimingPoints.size() != 1 || dx * dx + dy * dy < 15 * 15) return;
+    MouseMove(mX, mY);
+    SelectTarget();
+}
