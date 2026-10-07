@@ -231,10 +231,11 @@ namespace
             CompleteShip *ship = enemy ? gui->combatControl.currentTarget : gui->shipComplete;
             ShipGraph *graph = ShipGraph::GetShipInfo(enemy ? 1 : 0);
             if (ship == nullptr || graph == nullptr || index < 0 || index >= (int)graph->rooms.size()) return false;
-            Point corner = ship->shipManager->ship.GetShipCorner();
-            Point origin = enemy ? gui->combatControl.position + gui->combatControl.targetPosition + corner : gui->shipPosition + corner;
-            const Globals::Rect &r = graph->rooms[index]->rect;
-            return FoldLayoutToWindow("world", (float)(origin.x + r.x + r.w / 2), (float)(origin.y + r.y + r.h / 2), x, y);
+            // GetWorldCoordinates maps a game-screen point to ship coordinates (a pure offset), the same way the game
+            // maps real clicks, so the screen point of a ship point is that point minus the offset.
+            Point world = gui->GetWorldCoordinates(Point(0, 0), enemy);
+            Pointf center = graph->GetRoomCenter(index);
+            return FoldLayoutToWindow("world", center.x - world.x, center.y - world.y, x, y);
         }
         if (first == "crew")
         {
@@ -245,11 +246,11 @@ namespace
             CommandGui *gui = app != nullptr ? app->gui : nullptr;
             if (gui == nullptr || gui->shipComplete == nullptr) return false;
             ShipManager *ship = gui->shipComplete->shipManager;
-            Point origin = gui->shipPosition + ship->ship.GetShipCorner();
+            Point world = gui->GetWorldCoordinates(Point(0, 0), false);
             for (CrewMember *crew : ship->vCrewList)
             {
                 if (crew == nullptr || crew->iShipId != 0) continue;
-                if (n++ == index) return FoldLayoutToWindow("world", origin.x + crew->x, origin.y + crew->y, x, y);
+                if (n++ == index) return FoldLayoutToWindow("world", crew->x - world.x, crew->y - world.y, x, y);
             }
             return false;
         }
