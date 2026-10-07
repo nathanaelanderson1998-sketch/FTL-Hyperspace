@@ -129,9 +129,9 @@ namespace
         float s = HudScale(app);
         ShipManager *ship = app->gui->shipComplete != nullptr ? app->gui->shipComplete->shipManager : nullptr;
         bool drones = ship != nullptr && ship->HasSystem(4); // drone control
-        float bottomLeftRight = -ExtraX(app) + s * (drones ? 905.f : 650.f);
+        float bottomLeftRight = -ExtraX(app) + s * (drones ? 905.f : 645.f);
         float bottomRightLeft = 1280.f + ExtraX(app) - s * (1280.f - BOTTOM_RIGHT_LEFT);
-        return bottomLeftRight + 8.f > bottomRightLeft;
+        return bottomLeftRight + 4.f > bottomRightLeft;
     }
 
     // A HUD group or window maps game point p to canvas point c + s * (p - a).

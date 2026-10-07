@@ -130,7 +130,24 @@ namespace
         state["map"] = std::to_string((int)(gui->starMap != nullptr && gui->starMap->bOpen));
         state["choice"] = std::to_string((int)gui->choiceBox.bOpen);
         state["enemy"] = std::to_string((int)(gui->combatControl.currentTarget != nullptr));
-        state["targetbox"] = std::to_string(gui->combatControl.position.x) + "," + std::to_string(gui->combatControl.position.y);
+        auto pt = [](const Point &p) { return std::to_string(p.x) + "," + std::to_string(p.y); };
+        state["cc_pos"] = pt(gui->combatControl.position);
+        state["cc_target"] = pt(gui->combatControl.targetPosition);
+        state["cc_box"] = pt(gui->combatControl.boxPosition);
+        if (gui->combatControl.currentTarget != nullptr)
+        {
+            ShipGraph *graph = ShipGraph::GetShipInfo(1);
+            if (graph != nullptr)
+            {
+                state["e_rooms"] = std::to_string((int)graph->rooms.size());
+                for (size_t i = 0; i < graph->rooms.size() && i < 4; i++)
+                {
+                    const Globals::Rect &r = graph->rooms[i]->rect;
+                    state["e_room" + std::to_string(i)] = std::to_string(r.x) + "," + std::to_string(r.y) + "," + std::to_string(r.w) + "," + std::to_string(r.h);
+                }
+            }
+        }
+        state["autofire"] = std::to_string((int)gui->combatControl.weapControl.autoFiring);
         state["sel"] = std::to_string((int)gui->crewControl.selectedCrew.size());
         state["armed"] = std::to_string(gui->combatControl.weapControl.armedWeapon != nullptr ? gui->combatControl.weapControl.armedSlot : -1);
 
