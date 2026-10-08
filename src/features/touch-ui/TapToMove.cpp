@@ -179,6 +179,7 @@ HOOK_METHOD(CombatControl, MouseClick, (int mX, int mY, bool shift) -> void)
             if (weapon == nullptr || (IsBeam(weapon) && beamAimed)) continue;
             if (weapControl.armedWeapon == nullptr || weapControl.armedSlot != slot) weapControl.SelectArmament(slot);
             if (weapControl.armedWeapon == nullptr || weapControl.armedSlot != slot) continue; // could not arm it
+            MouseMove(mX, mY); // FTL aims at the room it last saw the pointer over, cleared by the previous aim
             super(mX, mY, shift);
             hs_log_file("Touch: selection aimed weapon %d (beam %d): targets %d, aiming points %d\n", slot, (int)IsBeam(weapon),
                         (int)weapon->targets.size(), (int)aimingPoints.size());
