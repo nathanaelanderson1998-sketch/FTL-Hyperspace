@@ -119,7 +119,8 @@ namespace
         if (b.y1 > b.y2) std::swap(b.y1, b.y2);
         // Cut in two where the systems meet the subsystems in the bottom row: half a box shows.
         float seam = FoldLayoutCheckSeam();
-        if (seam >= 0.f && b.x1 < seam - 3.f && b.x2 > seam + 3.f)
+        // (Only box-sized things: a long frame line running under the whole row just ends there.)
+        if (seam >= 0.f && b.x1 < seam - 3.f && b.x2 > seam + 3.f && b.x2 - b.x1 < 300.f)
         {
             auto snapc = [](float v) { return (float)((int)v / 8 * 8); };
             Report("OFFSCREEN", "cut at the row seam: " + Describe(region, Box{snapc(b.x1), snapc(b.y1), snapc(b.x2), snapc(b.y2)}) + " (" + what + ")");
