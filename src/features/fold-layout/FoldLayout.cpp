@@ -231,7 +231,11 @@ namespace
     float PanelHeight(CApp *app) { return BottomScale(app) * (720.f - SUBSYSTEM_ROW_TOP); }
 
     // Where the subsystems start in the row, in canvas x, before scrolling.
-    float SubsystemsLeft(CApp *app) { return -(float)ExtraX(app) + 4.f + BottomScale(app) * WeaponsLeft(app) + 10.f; }
+    // The systems end a little right of where FTL starts the weapon boxes: the last system box (and the end of its
+    // frame) reaches about 20 game px past that.
+    float SystemsEnd(CApp *app) { return WeaponsLeft(app) + 26.f; }
+
+    float SubsystemsLeft(CApp *app) { return -(float)ExtraX(app) + 4.f + BottomScale(app) * SystemsEnd(app) + 10.f; }
 
     // Right edge of the whole row if nothing were cut, in canvas x.
     float PanelNaturalRight(CApp *app)
@@ -687,7 +691,7 @@ namespace
             if (inPanel && !subsystems && gy >= BOTTOM_BAND_TOP && gy < 720.f)
             {
                 // The weapons are no longer drawn right of the systems: nothing to hit there.
-                if (gx >= wl)
+                if (gx >= SystemsEnd(app))
                 {
                     gx = -10000.f;
                     gy = -10000.f;
@@ -856,6 +860,7 @@ namespace
     bool drawingCursor = false;
     bool clipActive = false;          // the panel passes' scissor, in window coordinates (for the draw checker)
     float clipX1 = 0.f, clipY1 = 0.f, clipX2 = 0.f, clipY2 = 0.f;
+    float clipSeam = -1.f; // window x where the systems meet the subsystems in the bottom row (-1: none drawn now)
 
     struct RegionScope
     {
@@ -1026,6 +1031,10 @@ const char *FoldLayoutCheckRegion(bool &windowOverBalances)
 }
 
 // For the draw checker: the scissor rectangle in force (window coordinates), if any.
+// For the draw checker: window x of the seam between the systems and the subsystems while the row is drawn
+// (-1: none). Nothing may be cut in two there.
+float FoldLayoutCheckSeam() { return clipActive ? clipSeam : -1.f; }
+
 bool FoldLayoutCheckClip(float &x1, float &y1, float &x2, float &y2)
 {
     if (!clipActive) return false;
@@ -1415,6 +1424,7 @@ HOOK_METHOD_PRIORITY(SystemControl, OnRender, -10000, (bool front) -> void)
         glScissor(panelLeft, 0, split - panelLeft, height);
         clipX1 = (float)panelLeft;
         clipX2 = (float)split;
+        clipSeam = split > panelLeft && split < panelRight ? (float)split : -1.f;
         PushRegion(app, Region::BOTTOM_LEFT);
         activeRegion = Region::BOTTOM_LEFT;
         super(front);
@@ -1427,6 +1437,7 @@ HOOK_METHOD_PRIORITY(SystemControl, OnRender, -10000, (bool front) -> void)
         super(front);
         CSurface::GL_PopMatrix();
         clipActive = false;
+        clipSeam = -1.f;
         glDisable(GL_SCISSOR_TEST);
 
         // A row wider than the panel: a scroll bar along the bottom edge (canvas coordinates).
@@ -1979,6 +1990,7 @@ int FoldLayoutTooltipOnScreen() { return -1; }
 const char *FoldLayoutCheckRegion(bool &windowOverBalances) { windowOverBalances = false; return nullptr; }
 float FoldLayoutBalancesBottom() { return 0.f; }
 bool FoldLayoutCheckClip(float &x1, float &y1, float &x2, float &y2) { return false; }
+float FoldLayoutCheckSeam() { return -1.f; }
 void FoldLayoutPopMatrix() {}
 const char *FoldLayoutDescribe() { return ""; }
 

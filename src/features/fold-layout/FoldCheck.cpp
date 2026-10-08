@@ -21,6 +21,7 @@
 const char *FoldLayoutCheckRegion(bool &windowOverBalances); // FoldLayout.cpp: what is being drawn now
 float FoldLayoutBalancesBottom();                             // FoldLayout.cpp: window y below the balances rows
 bool FoldLayoutCheckClip(float &x1, float &y1, float &x2, float &y2); // FoldLayout.cpp: scissor in force
+float FoldLayoutCheckSeam();                                          // FoldLayout.cpp: systems/subsystems seam
 
 namespace
 {
@@ -116,6 +117,13 @@ namespace
         Box b{ox + m.tx + m.sx * x, oy + m.ty + m.sy * y, ox + m.tx + m.sx * (x + w), oy + m.ty + m.sy * (y + h)};
         if (b.x1 > b.x2) std::swap(b.x1, b.x2);
         if (b.y1 > b.y2) std::swap(b.y1, b.y2);
+        // Cut in two where the systems meet the subsystems in the bottom row: half a box shows.
+        float seam = FoldLayoutCheckSeam();
+        if (seam >= 0.f && b.x1 < seam - 3.f && b.x2 > seam + 3.f)
+        {
+            auto snapc = [](float v) { return (float)((int)v / 8 * 8); };
+            Report("OFFSCREEN", "cut at the row seam: " + Describe(region, Box{snapc(b.x1), snapc(b.y1), snapc(b.x2), snapc(b.y2)}) + " (" + what + ")");
+        }
         float cx1, cy1, cx2, cy2;
         if (FoldLayoutCheckClip(cx1, cy1, cx2, cy2))
         {
