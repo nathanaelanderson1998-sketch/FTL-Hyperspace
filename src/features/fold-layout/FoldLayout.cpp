@@ -891,6 +891,7 @@ namespace
     Region activeRegion = Region::NONE;
     bool drawingTooltip = false;
     bool drawingCrewPopup = false; // a held crew box, with its skills box hanging below it
+    bool drawingRowFade = false;   // the dark fades at the scrolling row's edges, over it on purpose
     bool drawingTouchButtons = false;
     bool drawingCursor = false;
     bool clipActive = false;          // the panel passes' scissor, in window coordinates (for the draw checker)
@@ -1046,6 +1047,7 @@ const char *FoldLayoutCheckRegion(bool &windowOverBalances)
     if (app == nullptr || !InGame(app)) return nullptr;
     if (drawingTooltip) return "tooltip";
     if (drawingCrewPopup) return "popup";
+    if (drawingRowFade) return nullptr;
     if (drawingCursor) return nullptr; // the pointer itself (hidden on the phone)
     if (drawingTouchButtons) return "touch-buttons";
     switch (activeRegion)
@@ -1551,6 +1553,7 @@ HOOK_METHOD_PRIORITY(SystemControl, OnRender, -10000, (bool front) -> void)
 
             // Soft edges where the row goes on out of view (instead of a hard cut): a fade to dark.
             float rowTop = 720.f + (float)ExtraY(app) - PanelHeight(app), rowHeight = PanelHeight(app) - 8.f;
+            drawingRowFade = true;
             const int STRIPS = 12;
             const float FADE = 56.f, strip = FADE / STRIPS;
             for (int i = 0; i < STRIPS; i++)
@@ -1561,6 +1564,7 @@ HOOK_METHOD_PRIORITY(SystemControl, OnRender, -10000, (bool front) -> void)
                 if (SystemsScroll(app) > 1.f)
                     CSurface::GL_DrawRect(left + i * strip, rowTop, strip, rowHeight, GL_Color(0.f, 0.f, 0.f, alpha));
             }
+            drawingRowFade = false;
         }
         activeRegion = saved;
         return;
