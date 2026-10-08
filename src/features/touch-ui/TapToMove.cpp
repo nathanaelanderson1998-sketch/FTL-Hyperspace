@@ -85,6 +85,7 @@ static void FollowWeaponTap(WeaponControl *control, int before)
 {
     if (!TapToMoveEnabled() || before == -1) return;
     int after = control->armedWeapon != nullptr ? control->armedSlot : -1;
+    if (after != before) hs_log_file("Touch: weapon tap switched %d -> %d (selected %d)\n", before, after, (int)volley.size());
     if (after == before) return;
     if (after == -1)
     {
@@ -126,6 +127,7 @@ HOOK_METHOD_PRIORITY(ArmamentControl, LButtonUp, -100, (int mX, int mY, bool shi
 HOOK_METHOD_PRIORITY(WeaponControl, DeselectArmament, -100, (unsigned int i) -> void)
 {
     LOG_HOOK("HOOK_METHOD_PRIORITY -> WeaponControl::DeselectArmament -> Begin (TapToMove.cpp)\n")
+    hs_log_file("Touch: deselect weapon %d (armed %d, selected %d)\n", (int)i, armedWeapon != nullptr ? armedSlot : -1, (int)volley.size());
     auto selected = std::find(volley.begin(), volley.end(), (int)i);
     if (selected != volley.end() && !(armedWeapon != nullptr && armedSlot == (int)i))
     {
