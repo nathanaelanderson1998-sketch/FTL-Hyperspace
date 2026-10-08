@@ -1464,7 +1464,12 @@ HOOK_METHOD_PRIORITY(DoorBox, OnRender, -10000, (bool ignoreStatus) -> void)
         clipX1 = x1; clipX2 = x2; clipY1 = y1; clipY2 = y2;
         CSurface::GL_PushMatrix();
         CSurface::GL_Translate(shift, 0.f, 0.f);
+        // Only the buttons and their frame: the doors icon and its power (drawn at location) would show through the
+        // frame's open corners, so they go far out of the clipped area meanwhile.
+        Point savedLocation = location;
+        location.x -= 4000;
         super(ignoreStatus);
+        location = savedLocation;
         CSurface::GL_PopMatrix();
     }
     else
