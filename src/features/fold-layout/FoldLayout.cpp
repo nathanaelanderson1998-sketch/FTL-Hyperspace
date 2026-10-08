@@ -233,9 +233,12 @@ namespace
     // Where the subsystems start in the row, in canvas x, before scrolling.
     // The systems end a little right of where FTL starts the weapon boxes: the last system box (and the end of its
     // frame) reaches about 20 game px past that.
-    float SystemsEnd(CApp *app) { return WeaponsLeft(app) + 36.f; }
+    float SystemsEnd(CApp *app) { return WeaponsLeft(app) + 26.f; }
 
-    float SubsystemsLeft(CApp *app) { return -(float)ExtraX(app) + 4.f + BottomScale(app) * SystemsEnd(app) + 24.f; }
+    // Canvas px from the end of the systems to the subsystems; the cut between them is SEAM_CUT px left of the
+    // subsystems.
+    const float SEAM_GAP = 50.f, SEAM_CUT = 30.f;
+    float SubsystemsLeft(CApp *app) { return -(float)ExtraX(app) + 4.f + BottomScale(app) * SystemsEnd(app) + SEAM_GAP; }
 
     // Right edge of the whole row if nothing were cut, in canvas x.
     float PanelNaturalRight(CApp *app)
@@ -359,6 +362,8 @@ namespace
     };
 
     bool TargetAnchor(CApp *app, float &ax, float &ay, float &scale);
+    bool TouchButtonsShown(CApp *app);
+    Globals::Rect TouchButtonRect(CApp *app, int index);
     Anchor ChoiceAnchor(CApp *app);
 
     Anchor GetAnchor(CApp *app, Region region)
@@ -451,6 +456,13 @@ namespace
         ax = (float)(combat.position.x + combat.boxPosition.x + size.x);
         ay = (float)(combat.position.y + combat.boxPosition.y);
         scale = 1.2f;
+        if (TouchButtonsShown(app))
+        {
+            // World y just above the buttons (the window is drawn in the world, then scaled about its top right).
+            float buttonsTop = (float)TouchButtonRect(app, 0).y - 8.f;
+            float worldY = 360.f + (buttonsTop - 360.f - WY(app)) / WZ(app);
+            scale = (std::max)(0.8f, (std::min)(scale, (worldY - ay) / (float)size.y));
+        }
         return true;
     }
 
@@ -683,7 +695,7 @@ namespace
             if (gy >= BOTTOM_BAND_TOP && gy < 720.f && gx >= wl - 8.f && gx < weaponsEnd) return Region::WEAPONS;
 
             bool inPanel = x < PanelRight(app) && x >= -(float)ExtraX(app);
-            bool subsystems = x >= SubsystemsLeft(app) - SystemsScroll(app) - 5.f;
+            bool subsystems = x >= SubsystemsLeft(app) - SystemsScroll(app) - SEAM_CUT;
             InverseMap(app, Region::BOTTOM_RIGHT, x, y, gx, gy);
             if (inPanel && subsystems && gy >= SUBSYSTEM_ROW_TOP && gy < 720.f && gx >= BOTTOM_RIGHT_LEFT && gx < 1280.f) return Region::BOTTOM_RIGHT;
 
@@ -691,7 +703,7 @@ namespace
             if (inPanel && !subsystems && gy >= BOTTOM_BAND_TOP && gy < 720.f)
             {
                 // The weapons are no longer drawn right of the systems: nothing to hit there.
-                if (gx >= SystemsEnd(app) - 10.f)
+                if (gx >= SystemsEnd(app))
                 {
                     gx = -10000.f;
                     gy = -10000.f;
@@ -856,6 +868,7 @@ namespace
     // render (an event box opened by a ship is drawn with the ships), and must not inherit its zoom.
     Region activeRegion = Region::NONE;
     bool drawingTooltip = false;
+    bool drawingCrewPopup = false; // a held crew box, with its skills box hanging below it
     bool drawingTouchButtons = false;
     bool drawingCursor = false;
     bool clipActive = false;          // the panel passes' scissor, in window coordinates (for the draw checker)
@@ -912,7 +925,7 @@ bool FoldLayoutPushTopLeftToBottomRight()
     if (TwoRowBottom(app) && !app->useDirect3D)
     {
         // It scrolls with the subsystems: only inside the panel.
-        GLint left = (std::max)(0, (GLint)(app->modifier_x + SubsystemsLeft(app) - SystemsScroll(app)) - 5);
+        GLint left = (std::max)(0, (GLint)(app->modifier_x + SubsystemsLeft(app) - SystemsScroll(app) - SEAM_CUT));
         GLint right = (GLint)(app->modifier_x + PanelRight(app)) + 2;
         glEnable(GL_SCISSOR_TEST);
         glScissor(left, 0, (std::max)(0, right - left), app->screen_y);
@@ -1012,6 +1025,7 @@ const char *FoldLayoutCheckRegion(bool &windowOverBalances)
     CApp *app = G_->GetCApp();
     if (app == nullptr || !InGame(app)) return nullptr;
     if (drawingTooltip) return "tooltip";
+    if (drawingCrewPopup) return "popup";
     if (drawingCursor) return nullptr; // the pointer itself (hidden on the phone)
     if (drawingTouchButtons) return "touch-buttons";
     switch (activeRegion)
@@ -1413,7 +1427,7 @@ HOOK_METHOD_PRIORITY(SystemControl, OnRender, -10000, (bool front) -> void)
         // Panel: one row, systems then subsystems. GL scissor y counts from the bottom of the window.
         GLint panelRight = (GLint)(app->modifier_x + PanelRight(app)) + 2;
         GLint panelLeft = (std::max)(0, (GLint)(app->modifier_x - ExtraX(app)));
-        GLint split = (std::max)(panelLeft, (std::min)(panelRight, (GLint)(app->modifier_x + SubsystemsLeft(app) - SystemsScroll(app)) - 5));
+        GLint split = (std::max)(panelLeft, (std::min)(panelRight, (GLint)(app->modifier_x + SubsystemsLeft(app) - SystemsScroll(app) - SEAM_CUT)));
         // Nothing of the row above the crew list (a reactor taller than the room left for it).
         GLint panelTop = (std::max)(0, (GLint)(app->modifier_y + CrewBottom(app)) + 4);
         GLsizei height = (std::max)(0, app->screen_y - panelTop);
@@ -1673,6 +1687,16 @@ HOOK_METHOD_PRIORITY(CombatControl, OnRenderTooltips, -10000, () -> void)
     LOG_HOOK("HOOK_METHOD_PRIORITY -> CombatControl::OnRenderTooltips -> Begin (FoldLayout.cpp)\n")
     RegionScope scope(lastRegion);
     super();
+}
+
+// A held crew box shows its skills in a box hanging below it, over whatever is there (only while held, like a tooltip).
+HOOK_METHOD_PRIORITY(CrewBox, OnRender, -10000, () -> void)
+{
+    LOG_HOOK("HOOK_METHOD_PRIORITY -> CrewBox::OnRender -> Begin (FoldLayout.cpp)\n")
+    bool popup = mouseHover && activeRegion == Region::CREW;
+    drawingCrewPopup = popup;
+    super();
+    if (popup) drawingCrewPopup = false;
 }
 
 // FTL_HIDE_CURSOR=1 (set by the Android launcher): a touch screen has no pointer, so the cursor and the icons that
