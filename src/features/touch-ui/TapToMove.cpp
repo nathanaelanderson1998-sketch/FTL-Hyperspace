@@ -40,6 +40,7 @@ HOOK_METHOD(CrewControl, LButton, (int mX, int mY, int wX, int wY, bool shiftHel
         !IsPointInCrewBoxes(mX, mY) && ClickIsOnShip(this, mX, mY, wX, wY))
     {
         RButton(mX, mY, false);
+        ClearSelectedCrew(); // sent: like a finger lifting off them, they are no longer selected
         return;
     }
     super(mX, mY, wX, wY, shiftHeld);

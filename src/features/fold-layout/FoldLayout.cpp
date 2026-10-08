@@ -284,11 +284,8 @@ namespace
         float b = BottomScale(app);
         if (!TwoRowBottom(app)) return b;
         float fitX = (1280.f + ExtraX(app) - 4.f - WeaponsX(app)) / 430.f;
-        // With drones, two rows sit under the enemy window (enlarged, its lowest point is about game y 685).
-        float enemyBottom = 360.f + WorldShiftY(app) + BaseZoom(app) * (685.f - 360.f);
-        float room = (float)ExtraY(app) + 720.f - enemyBottom - 4.f;
-        float fitY = HasDrones(app) ? room / 270.f : 10.f;
-        return (std::max)(1.f, (std::min)(1.7f, (std::min)(fitX, fitY)));
+        // (With drones a second row sits above the weapons; the enemy window shrinks to end above it.)
+        return (std::max)(1.f, (std::min)(1.7f, fitX));
     }
 
     // Drones make the bottom-left group so wide that, enlarged, it would reach the subsystems: lift those a row.
@@ -1408,6 +1405,16 @@ HOOK_METHOD_PRIORITY(CombatControl, OnRenderInterface, -10000, (bool front) -> v
     super(front);
 }
 
+// The drones' names and hotkeys are drawn with the weapons' (in CombatControl::OnRenderInterface): put them on the
+// drone boxes.
+HOOK_METHOD_PRIORITY(ArmamentControl, RenderLabels, -10000, () -> void)
+{
+    LOG_HOOK("HOOK_METHOD_PRIORITY -> ArmamentControl::RenderLabels -> Begin (FoldLayout.cpp)\n")
+    if (systemId != 4) return super();
+    RegionScope scope(Region::DRONES, true);
+    super();
+}
+
 HOOK_METHOD_PRIORITY(DroneControl, OnRender, -10000, (bool front) -> void)
 {
     LOG_HOOK("HOOK_METHOD_PRIORITY -> DroneControl::OnRender -> Begin (FoldLayout.cpp)\n")
@@ -1541,6 +1548,19 @@ HOOK_METHOD_PRIORITY(SystemControl, OnRender, -10000, (bool front) -> void)
             float thumb = left + (track - visible) * (SystemsScroll(app) / maxScroll);
             CSurface::GL_DrawRect(left, y, track, 4.f, GL_Color(0.35f, 0.4f, 0.45f, 0.6f));
             CSurface::GL_DrawRect(thumb, y - 1.f, visible, 5.f, GL_Color(0.85f, 0.9f, 0.95f, 0.95f));
+
+            // Soft edges where the row goes on out of view (instead of a hard cut): a fade to dark.
+            float rowTop = 720.f + (float)ExtraY(app) - PanelHeight(app), rowHeight = PanelHeight(app) - 8.f;
+            const int STRIPS = 12;
+            const float FADE = 56.f, strip = FADE / STRIPS;
+            for (int i = 0; i < STRIPS; i++)
+            {
+                float alpha = 0.85f * (float)(STRIPS - i) / STRIPS; // darkest at the edge
+                if (SystemsScroll(app) < maxScroll - 1.f)
+                    CSurface::GL_DrawRect(right - (i + 1) * strip, rowTop, strip, rowHeight, GL_Color(0.f, 0.f, 0.f, alpha));
+                if (SystemsScroll(app) > 1.f)
+                    CSurface::GL_DrawRect(left + i * strip, rowTop, strip, rowHeight, GL_Color(0.f, 0.f, 0.f, alpha));
+            }
         }
         activeRegion = saved;
         return;
