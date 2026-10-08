@@ -368,8 +368,6 @@ namespace
     };
 
     bool TargetAnchor(CApp *app, float &ax, float &ay, float &scale);
-    bool TouchButtonsShown(CApp *app);
-    Globals::Rect TouchButtonRect(CApp *app, int index);
     Anchor ChoiceAnchor(CApp *app);
 
     Anchor GetAnchor(CApp *app, Region region)
@@ -483,13 +481,6 @@ namespace
         ax = (float)(combat.position.x + combat.boxPosition.x + size.x);
         ay = (float)(combat.position.y + combat.boxPosition.y);
         scale = 1.2f;
-        if (TouchButtonsShown(app))
-        {
-            // World y just above the buttons (the window is drawn in the world, then scaled about its top right).
-            float buttonsTop = (float)TouchButtonRect(app, 1).y - 28.f; // its frame image reaches ~20 px below the box
-            float worldY = 360.f + (buttonsTop - 360.f - WY(app)) / WZ(app);
-            scale = (std::max)(0.8f, (std::min)(scale, (worldY - ay) / (float)size.y));
-        }
         return true;
     }
 
@@ -1224,28 +1215,13 @@ namespace
         return InGame(app) && TwoRowBottom(app) && !ModalOpen(app->gui);
     }
 
-    // Button 0 = Esc, 1 = Pause, in canvas coordinates: above the weapons at the right, or with drones (a row
-    // above the weapons), at the right end of that row.
+    // Button 1 = Pause (0, Esc, is no longer drawn: the wrench opens the game menu), in canvas coordinates: the top
+    // right corner, level with the top bar's buttons (the world never rises above those).
     Globals::Rect TouchButtonRect(CApp *app, int index)
     {
-        Anchor w = GetAnchor(app, Region::WEAPONS);
-        float bottom = w.cy - w.s * (720.f - BOTTOM_BAND_TOP) - 10.f;
-        float width = TOUCH_BUTTON_W, height = TOUCH_BUTTON_H;
-        float rightEdge = 1280.f + ExtraX(app) - 8.f;
-        if (HasDrones(app))
-        {
-            Anchor d = GetAnchor(app, Region::DRONES);
-            float dronesRight = d.cx + d.s * 296.f;
-            width = (std::min)(TOUCH_BUTTON_W, (rightEdge - dronesRight - 8.f - TOUCH_BUTTON_GAP) / 2.f);
-            bottom = d.cy - d.s * 20.f;
-            if (width < 70.f)
-            {
-                width = TOUCH_BUTTON_W;
-                bottom = d.cy - d.s * (720.f - BOTTOM_BAND_TOP + 5.f) - 10.f;
-            }
-        }
-        float right = rightEdge - (1 - index) * (width + TOUCH_BUTTON_GAP);
-        return Globals::Rect({(int)(right - width), (int)(bottom - height), (int)width, (int)height});
+        float right = 1280.f + (float)ExtraX(app) - 8.f - (1 - index) * (TOUCH_BUTTON_W + TOUCH_BUTTON_GAP);
+        float top = -(float)ExtraY(app) + 8.f;
+        return Globals::Rect({(int)(right - TOUCH_BUTTON_W), (int)top, (int)TOUCH_BUTTON_W, (int)TOUCH_BUTTON_H});
     }
 
     int TouchButtonAt(CApp *app, int x, int y)
