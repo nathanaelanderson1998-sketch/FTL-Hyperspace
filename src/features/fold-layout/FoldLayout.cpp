@@ -1207,7 +1207,7 @@ HOOK_STATIC_PRIORITY(CSurface, GL_SetScissor, -10000, (int x, int y, int w, int 
 
 namespace
 {
-    const float TOUCH_BUTTON_W = 112.f, TOUCH_BUTTON_H = 76.f, TOUCH_BUTTON_GAP = 10.f;
+    const float TOUCH_BUTTON_W = 112.f, TOUCH_BUTTON_H = 76.f, TOUCH_BUTTON_GAP = 10.f, TOUCH_BUTTON_MIN_W = 52.f;
     bool swallowLeftUp = false;
 
     bool TouchButtonsShown(CApp *app)
@@ -1221,7 +1221,16 @@ namespace
     {
         float right = 1280.f + (float)ExtraX(app) - 8.f - (1 - index) * (TOUCH_BUTTON_W + TOUCH_BUTTON_GAP);
         float top = -(float)ExtraY(app) + 8.f;
-        return Globals::Rect({(int)(right - TOUCH_BUTTON_W), (int)top, (int)TOUCH_BUTTON_W, (int)TOUCH_BUTTON_H});
+        // Right of the wrench, the last of the top bar's buttons (a store beacon adds one and pushes it right).
+        float width = TOUCH_BUTTON_W;
+        if (app->gui != nullptr && app->gui->optionsButton.hitbox.w > 0)
+        {
+            const Globals::Rect &o = app->gui->optionsButton.hitbox;
+            float wrenchRight, wrenchY;
+            ToCanvas(app, Region::TOP_LEFT, (float)(o.x + o.w), (float)o.y, wrenchRight, wrenchY);
+            width = (std::max)(TOUCH_BUTTON_MIN_W, (std::min)(TOUCH_BUTTON_W, right - wrenchRight - TOUCH_BUTTON_GAP));
+        }
+        return Globals::Rect({(int)(right - width), (int)top, (int)width, (int)TOUCH_BUTTON_H});
     }
 
     int TouchButtonAt(CApp *app, int x, int y)
@@ -1254,7 +1263,7 @@ namespace
             CSurface::GL_DrawRect((float)r.x, (float)r.y, (float)r.w, (float)r.h, fill);
             CSurface::GL_DrawRectOutline(r.x, r.y, r.w, r.h, GL_Color(0.78f, 0.92f, 0.86f, 1.f), 3.f);
             CSurface::GL_SetColor(GL_Color(0.92f, 1.f, 0.96f, 1.f));
-            freetype::easy_printCenter(24, r.x + r.w / 2.f, r.y + r.h / 2.f - 12.f, labels[i]);
+            freetype::easy_printCenter(24, r.x + r.w / 2.f, r.y + r.h / 2.f - 12.f, r.w < 100 ? "II" : labels[i]); // narrow: a pause sign
             CSurface::GL_SetColor(GL_Color(1.f, 1.f, 1.f, 1.f));
         }
         drawingTouchButtons = false;
