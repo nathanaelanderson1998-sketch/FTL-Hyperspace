@@ -1285,6 +1285,17 @@ namespace
     }
 }
 
+// The sell box and the over-capacity boxes sit 275 px left of the equipment window (store / ship screen). Enlarged,
+// that is off the screen: they move right (over the window's edge, while shown) to start at the canvas's left edge.
+int FoldEquipmentLeftColumn(int windowX)
+{
+    CApp *app = G_->GetCApp();
+    if (app == nullptr || !InGame(app) || !TwoRowBottom(app)) return -275;
+    float gx, gy;
+    InverseMap(app, Region::MODAL, -(float)ExtraX(app) + 8.f, 0.f, gx, gy);
+    return (std::max)(-275, (int)std::ceil(gx) - windowX);
+}
+
 // For the test harness: the window point at the centre of touch button 0 (menu) or 1 (pause).
 bool FoldLayoutTouchButton(int index, int &windowX, int &windowY)
 {
@@ -2072,6 +2083,7 @@ const char *FoldLayoutCheckRegion(bool &windowOverBalances) { windowOverBalances
 float FoldLayoutBalancesBottom() { return 0.f; }
 bool FoldLayoutCheckClip(float &x1, float &y1, float &x2, float &y2) { return false; }
 float FoldLayoutCheckSeam() { return -1.f; }
+int FoldEquipmentLeftColumn(int windowX) { return -275; }
 void FoldLayoutPopMatrix() {}
 const char *FoldLayoutDescribe() { return ""; }
 

@@ -2,6 +2,10 @@
 #include "CustomEquipment.h"
 #include "Equipment_Extend.h"
 #include "CustomShipSelect.h"
+
+// Fold layout (FoldLayout.cpp): x of the boxes left of the equipment window (sell, over capacity), relative to it;
+// -275 unless the enlarged store would put them off the screen.
+int FoldEquipmentLeftColumn(int windowX);
 #include <boost/algorithm/string.hpp>
 
 bool g_multipleOverCapacity = false;
@@ -452,7 +456,7 @@ void CustomEquipment::SetPosition(Point p)
 
     orig->infoBoxLoc = Point(orig->position.x + 600, orig->position.y);
     orig->infoBox.location = Point(orig->position.x + 600, orig->position.y - 25);
-    orig->sellBox.position = Point(orig->position.x - 275, orig->position.y + 100);
+    orig->sellBox.position = Point(orig->position.x + FoldEquipmentLeftColumn(orig->position.x), orig->position.y + 100);
 
     int weaponSlots = orig->shipManager->myBlueprint.weaponSlots;
     int droneSlots = orig->shipManager->myBlueprint.droneSlots;
@@ -507,6 +511,7 @@ void CustomEquipment::SetPosition(Point p)
         ++i;
     }
 
+    orig->overBox.position.x = orig->overAugImage.position.x = FoldEquipmentLeftColumn(orig->position.x);
     orig->overcapacityBox->SetPosition(Point(orig->position.x + orig->overBox.position.x + 80, orig->position.y + orig->overBox.position.y + orig->overBox.GetBodySpaceOffset()));
     orig->overAugBox->SetPosition(Point(orig->position.x + orig->overAugImage.position.x + 19, orig->position.y + orig->overAugImage.position.y + orig->overAugImage.GetBodySpaceOffset() + 4));
     Globals::Rect overcapacytBoxRect = Globals::Rect(orig->position.x + orig->overBox.position.x, orig->position.y + orig->overBox.position.y, 272, orig->overBox.GetHeight());
@@ -527,17 +532,18 @@ void CustomEquipment::OnRender()
     if (orig->bStoreMode)
     {
         // Adjust sellBox position. sellBox is completely overlapped by over capacity box in vanilla.
+        orig->overBox.position.x = orig->overAugImage.position.x = FoldEquipmentLeftColumn(orig->position.x);
         if (orig->bStoreMode && orig->bOverCapacity)
         {
-            orig->sellBox.position = Point(orig->position.x - 275, orig->position.y + orig->overBox.position.y + orig->overBox.GetHeight() - 5);
+            orig->sellBox.position = Point(orig->position.x + FoldEquipmentLeftColumn(orig->position.x), orig->position.y + orig->overBox.position.y + orig->overBox.GetHeight() - 5);
         }
         else if (orig->bStoreMode && orig->bOverAugCapacity)
         {
-            orig->sellBox.position = Point(orig->position.x - 275, orig->position.y + orig->overAugImage.position.y + orig->overAugImage.GetHeight() - 5);
+            orig->sellBox.position = Point(orig->position.x + FoldEquipmentLeftColumn(orig->position.x), orig->position.y + orig->overAugImage.position.y + orig->overAugImage.GetHeight() - 5);
         }
         else
         {
-            orig->sellBox.position = Point(orig->position.x - 275, orig->position.y + 100);
+            orig->sellBox.position = Point(orig->position.x + FoldEquipmentLeftColumn(orig->position.x), orig->position.y + 100);
         }
         orig->sellBox.sellCostText = orig->sellCostText;
         orig->sellBox.OnRender();
