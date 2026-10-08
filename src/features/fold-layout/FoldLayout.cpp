@@ -235,10 +235,15 @@ namespace
     // frame) reaches about 20 game px past that.
     float SystemsEnd(CApp *app) { return WeaponsLeft(app) + 26.f; }
 
+    // The doors box's open/close-all buttons sit in a slot this wide (game px) at the left end of the row, so they
+    // show without scrolling; the systems start after it.
+    const float DOOR_SLOT = 36.f;
+    float DoorSlot(CApp *app) { return TwoRowBottom(app) ? DOOR_SLOT : 0.f; }
+
     // Canvas px from the end of the systems to the subsystems; the cut between them is SEAM_CUT px left of the
     // subsystems.
     const float SEAM_GAP = 50.f, SEAM_CUT = 30.f;
-    float SubsystemsLeft(CApp *app) { return -(float)ExtraX(app) + 4.f + BottomScale(app) * SystemsEnd(app) + SEAM_GAP; }
+    float SubsystemsLeft(CApp *app) { return -(float)ExtraX(app) + 4.f + BottomScale(app) * (DoorSlot(app) + SystemsEnd(app)) + SEAM_GAP; }
 
     // Right edge of the whole row if nothing were cut, in canvas x.
     float PanelNaturalRight(CApp *app)
@@ -247,12 +252,13 @@ namespace
         return SubsystemsLeft(app) + BottomScale(app) * (1280.f - BOTTOM_RIGHT_LEFT);
     }
 
-    // Right edge of the panel as shown, in canvas x: the weapons keep at least 1.3x to the right of it.
+    // Right edge of the panel as shown, in canvas x: the weapons keep at least WEAPONS_MIN_SCALE to the right of it.
+    const float WEAPONS_MIN_SCALE = 1.5f;
     float PanelRight(CApp *app)
     {
         float natural = PanelNaturalRight(app);
         if (!TwoRowBottom(app)) return natural;
-        return (std::min)(natural, 1280.f + (float)ExtraX(app) - 4.f - 12.f - 430.f * 1.3f);
+        return (std::min)(natural, 1280.f + (float)ExtraX(app) - 4.f - 12.f - 430.f * WEAPONS_MIN_SCALE);
     }
 
     // The row scrolls sideways (a swipe across it) when it is wider than the panel. Canvas px, >= 0.
@@ -379,7 +385,7 @@ namespace
         case Region::BOTTOM_LEFT:
             if (!panel) return {0.f, 720.f, -ex, 720.f + ey, b};
             // Systems: the start of the bottom row.
-            return {0.f, 720.f, -ex + 4.f - SystemsScroll(app), 720.f + ey, b};
+            return {0.f, 720.f, -ex + 4.f + b * DoorSlot(app) - SystemsScroll(app), 720.f + ey, b};
         case Region::BOTTOM_RIGHT:
         {
             // Subsystems and More Info: after the systems in the bottom row.
@@ -415,6 +421,27 @@ namespace
     // subsystems row, grown up and to the right from just left of its icon.
     DoorBox *lastDoorBox = nullptr;
     const float DOOR_FRAME_SHIFT_Y = 382.f; // measured: box frame y + this = game y (for the test harness)
+
+    // The open/close-all buttons of the doors box, in its own frame (x = game x; y + DOOR_FRAME_SHIFT_Y = game y).
+    bool DoorButtons(DoorBox *box, float &x1, float &y1, float &x2, float &y2)
+    {
+        if (box == nullptr) return false;
+        const Globals::Rect &o = box->openDoors.hitbox, &c = box->closeDoors.hitbox;
+        x1 = (float)(box->buttonOffset.x + (std::min)(o.x, c.x)) - 5.f;
+        x2 = (float)(box->buttonOffset.x + (std::max)(o.x + o.w, c.x + c.w)) + 5.f;
+        y1 = (float)(box->buttonOffset.y + (std::min)(o.y, c.y)) - 5.f;
+        y2 = (float)(box->buttonOffset.y + (std::max)(o.y + o.h, c.y + c.h)) + 5.f;
+        return x2 > x1 && y2 > y1 && x1 >= BOTTOM_RIGHT_LEFT && x1 < 1280.f;
+    }
+
+    // How far (game x) the buttons move: from among the subsystems to the slot at the left of the systems
+    // (systems-group x, left of 0).
+    float DoorButtonsShift(DoorBox *box)
+    {
+        float x1, y1, x2, y2;
+        if (!DoorButtons(box, x1, y1, x2, y2)) return 0.f;
+        return -DOOR_SLOT + (DOOR_SLOT - (x2 - x1)) / 2.f - x1;
+    }
 
     bool DoorAnchor(DoorBox *box, float &ax, float &ay)
     {
@@ -990,10 +1017,8 @@ bool FoldLayoutToWindow(const std::string &region, float x, float y, int &window
             }
             if (region == "door" && TwoRowBottom(app) && DoorAnchor(lastDoorBox, dx, dy))
             {
-                // A point of the doors box: enlarged inside the subsystems group.
-                dy += DOOR_FRAME_SHIFT_Y;
-                x = dx + DOOR_BUTTON_SCALE * (x - dx);
-                y = dy + DOOR_BUTTON_SCALE * (y - dy);
+                // A point of the doors box's buttons: moved to the slot at the left of the systems.
+                x += DoorButtonsShift(lastDoorBox);
             }
             if (region == "row")
             {
@@ -1005,7 +1030,7 @@ bool FoldLayoutToWindow(const std::string &region, float x, float y, int &window
                 return true;
             }
             Region r = region == "tl" ? Region::TOP_LEFT : region == "bl" ? Region::BOTTOM_LEFT :
-                       region == "br" || region == "door" ? Region::BOTTOM_RIGHT : region == "wp" ? Region::WEAPONS :
+                       region == "door" && TwoRowBottom(app) ? Region::BOTTOM_LEFT : region == "br" || region == "door" ? Region::BOTTOM_RIGHT : region == "wp" ? Region::WEAPONS :
                        region == "cr" || region == "st" ? Region::CREW : region == "dr" ? Region::DRONES : Region::MODAL;
             Anchor a = GetAnchor(app, r);
             cx = a.cx + a.s * (x - a.ax);
@@ -1226,7 +1251,7 @@ namespace
     int TouchButtonAt(CApp *app, int x, int y)
     {
         if (!TouchButtonsShown(app)) return -1;
-        for (int i = 0; i < 2; i++)
+        for (int i = 1; i < 2; i++) // only Pause: the wrench at the top opens the game menu
         {
             Globals::Rect r = TouchButtonRect(app, i);
             if (x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h) return i;
@@ -1245,7 +1270,7 @@ namespace
         if (!TouchButtonsShown(app)) return;
         drawingTouchButtons = true;
         static const char *labels[] = {"MENU", "PAUSE"};
-        for (int i = 0; i < 2; i++)
+        for (int i = 1; i < 2; i++) // only Pause, where it was
         {
             Globals::Rect r = TouchButtonRect(app, i);
             bool active = i == 1 && app->gui->bPaused;
@@ -1264,7 +1289,7 @@ namespace
 bool FoldLayoutTouchButton(int index, int &windowX, int &windowY)
 {
     CApp *app = G_->GetCApp();
-    if (app == nullptr || !TouchButtonsShown(app)) return false;
+    if (app == nullptr || !TouchButtonsShown(app) || index != 1) return false; // only Pause is drawn
     Globals::Rect r = TouchButtonRect(app, index);
     windowX = r.x + r.w / 2 + app->modifier_x;
     windowY = r.y + r.h / 2 + app->modifier_y;
@@ -1386,24 +1411,56 @@ HOOK_METHOD_PRIORITY(DoorBox, OnRender, -10000, (bool ignoreStatus) -> void)
                     location.x, location.y, buttonOffset.x, buttonOffset.y, openDoors.hitbox.x, openDoors.hitbox.y,
                     closeDoors.hitbox.x, closeDoors.hitbox.y, (int)anchor, ax, ay, (int)inGuiRender);
     }
-    if (!inGuiRender || !InGame(app) || !TwoRowBottom(app) || !DoorAnchor(this, ax, ay)) return super(ignoreStatus);
-    CSurface::GL_PushMatrix();
-    CSurface::GL_Translate(ax, ay, 0.f);
-    CSurface::GL_Scale(DOOR_BUTTON_SCALE, DOOR_BUTTON_SCALE, 1.f);
-    CSurface::GL_Translate(-ax, -ay, 0.f);
-    super(ignoreStatus);
-    CSurface::GL_PopMatrix();
+    float bx1, by1, bx2, by2;
+    if (!inGuiRender || !InGame(app) || !TwoRowBottom(app) || !clipActive || app->useDirect3D || !DoorButtons(this, bx1, by1, bx2, by2))
+        return super(ignoreStatus);
+    // Window rectangle of the buttons, drawn shifted (systems pass) or where FTL puts them (subsystems pass).
+    float shift = activeRegion == Region::BOTTOM_LEFT ? DoorButtonsShift(this) : 0.f;
+    float cx1, cy1, cx2, cy2;
+    ToCanvas(app, activeRegion, bx1 + shift, by1 + DOOR_FRAME_SHIFT_Y, cx1, cy1);
+    ToCanvas(app, activeRegion, bx2 + shift, by2 + DOOR_FRAME_SHIFT_Y, cx2, cy2);
+    float wx1 = cx1 + app->modifier_x, wx2 = cx2 + app->modifier_x, wy1 = cy1 + app->modifier_y, wy2 = cy2 + app->modifier_y;
+    GLint saved[4];
+    glGetIntegerv(GL_SCISSOR_BOX, saved);
+    float sx1 = (float)saved[0], sx2 = (float)(saved[0] + saved[2]);
+    float sTop = (float)(app->screen_y - saved[1] - saved[3]), sBottom = (float)(app->screen_y - saved[1]);
+    float savedClip[4] = {clipX1, clipY1, clipX2, clipY2};
+    if (activeRegion == Region::BOTTOM_LEFT)
+    {
+        // Only the buttons, in the slot.
+        float x1 = (std::max)(sx1, wx1), x2 = (std::min)(sx2, wx2), y1 = (std::max)(sTop, wy1), y2 = (std::min)(sBottom, wy2);
+        if (x2 <= x1 || y2 <= y1) return;
+        glScissor((GLint)x1, app->screen_y - (GLint)y2, (GLsizei)(x2 - x1), (GLsizei)(y2 - y1));
+        clipX1 = x1; clipX2 = x2; clipY1 = y1; clipY2 = y2;
+        CSurface::GL_PushMatrix();
+        CSurface::GL_Translate(shift, 0.f, 0.f);
+        super(ignoreStatus);
+        CSurface::GL_PopMatrix();
+    }
+    else
+    {
+        // Everything but the buttons (the doors icon and its power stay with the subsystems).
+        float x2 = (std::min)(sx2, wx1);
+        if (x2 > sx1)
+        {
+            glScissor(saved[0], saved[1], (GLsizei)(x2 - sx1), saved[3]);
+            clipX2 = x2;
+            super(ignoreStatus);
+        }
+    }
+    glScissor(saved[0], saved[1], saved[2], saved[3]);
+    clipX1 = savedClip[0]; clipY1 = savedClip[1]; clipX2 = savedClip[2]; clipY2 = savedClip[3];
 }
 
 HOOK_METHOD_PRIORITY(DoorBox, MouseMove, -10000, (int mX, int mY) -> void)
 {
     LOG_HOOK("HOOK_METHOD_PRIORITY -> DoorBox::MouseMove -> Begin (FoldLayout.cpp)\n")
     CApp *app = G_->GetCApp();
-    float ax, ay;
-    if (InGame(app) && TwoRowBottom(app) && DoorAnchor(this, ax, ay) && mX > -9000)
+    float bx1, by1, bx2, by2;
+    if (InGame(app) && TwoRowBottom(app) && DoorButtons(this, bx1, by1, bx2, by2) && mX > -9000)
     {
-        mX = (int)std::floor(ax + (mX - ax) / DOOR_BUTTON_SCALE);
-        mY = (int)std::floor(ay + (mY - ay) / DOOR_BUTTON_SCALE);
+        if (lastRegion == Region::BOTTOM_LEFT) mX -= (int)std::lround(DoorButtonsShift(this));
+        else if (mX >= bx1 && mX < bx2) mX = -10000;
     }
     super(mX, mY);
 }
