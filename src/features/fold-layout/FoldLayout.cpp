@@ -1242,6 +1242,8 @@ namespace
                 barRight = (std::max)(barRight, (float)(b->x + b->w) + 30.f); // + labels drawn past the hitbox
                 barBottom = (std::max)(barBottom, (float)(b->y + b->h) + 30.f);
             }
+            // At a store beacon the STORE button's label reaches past its hitbox, to about game x 890.
+            if (gui->storeButton.bActive) barRight = (std::max)(barRight, 890.f);
             float barRightX, barBottomY;
             ToCanvas(app, Region::TOP_LEFT, barRight, barBottom, barRightX, barBottomY);
             width = (std::min)(TOUCH_BUTTON_W, right - barRightX - TOUCH_BUTTON_GAP);

@@ -161,7 +161,10 @@ HOOK_METHOD_PRIORITY(WeaponControl, OnLoop, -100, () -> void)
 HOOK_METHOD(CombatControl, MouseClick, (int mX, int mY, bool shift) -> void)
 {
     LOG_HOOK("HOOK_METHOD -> CombatControl::MouseClick -> Begin (TapToMove.cpp)\n")
-    if (TapToMoveEnabled() && !volley.empty() && weapControl.armedWeapon != nullptr && aimingPoints.empty())
+    Point hostile = GetHostileBoxSize();
+    int boxX = position.x + boxPosition.x, boxY = position.y + boxPosition.y;
+    bool onEnemy = currentTarget != nullptr && mX >= boxX && mX < boxX + hostile.x && mY >= boxY && mY < boxY + hostile.y;
+    if (TapToMoveEnabled() && !volley.empty() && weapControl.armedWeapon != nullptr && aimingPoints.empty() && onEnemy)
     {
         // Aim the armed weapon and then each selected one at this point; stop at the first that does not take it
         // (not a target: the tap did whatever else it does, once).
