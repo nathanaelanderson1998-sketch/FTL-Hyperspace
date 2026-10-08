@@ -3,6 +3,7 @@
 #ifdef _WIN32
 
 #include <algorithm>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <set>
@@ -39,6 +40,7 @@ namespace
         Box box;
         bool windowOverBalances;
         std::string what; // what was drawn, for the report
+        const void *primitive; // the primitive drawn, if it was one
     };
 
     // A remembered primitive: its local bounds and what made it.
@@ -63,6 +65,7 @@ namespace
     }
 
     std::vector<Matrix> stack(1);
+    const void *currentPrimitive = nullptr; // set while a primitive is being drawn
     // The matrix at the start of the in-game render: whether FTL's own centring offset is in it or applied
     // elsewhere, window position = tracked position - base + modifier.
     float baseTx = 0.f, baseTy = 0.f;
@@ -128,7 +131,7 @@ namespace
         {
             Report("OFFSCREEN", Describe(region, Box{snap(b.x1), snap(b.y1), snap(b.x2), snap(b.y2)}) + " (" + what + ")");
         }
-        if (frame.size() < 4000) frame.push_back(Drawn{region, b, windowOverBalances, what});
+        if (frame.size() < 4000) frame.push_back(Drawn{region, b, windowOverBalances, what, currentPrimitive});
     }
 
     bool Hud(const std::string &region)
@@ -154,6 +157,15 @@ namespace
             for (size_t j = i + 1; j < frame.size(); j++)
             {
                 const Drawn &b = frame[j];
+                // One image drawn twice, the copies overlapping somewhere else than exactly on each other: an
+                // enlarged copy with the original left showing behind it. (Repeated images, like power bars, sit
+                // side by side and do not overlap.)
+                if (a.primitive != nullptr && a.primitive == b.primitive && Hud(a.region) && Hud(b.region) && Overlap(a.box, b.box) > 0.f &&
+                    (std::abs(a.box.x1 - b.box.x1) > 2.f || std::abs(a.box.y1 - b.box.y1) > 2.f || std::abs(a.box.x2 - b.box.x2) > 2.f))
+                {
+                    auto snapd = [](const Box &x) { return Box{(float)((int)x.x1 / 16 * 16), (float)((int)x.y1 / 16 * 16), (float)((int)x.x2 / 16 * 16), (float)((int)x.y2 / 16 * 16)}; };
+                    Report("OVERLAP", "drawn twice: " + Describe(a.region, snapd(a.box)) + " and " + Describe(b.region, snapd(b.box)) + " (" + a.what + ")");
+                }
                 if (a.region == b.region) continue;
                 bool hudPair = Hud(a.region) && Hud(b.region);
                 bool balancePair = (a.windowOverBalances && b.region == "top-left" && b.box.y2 <= balances) ||
@@ -173,7 +185,9 @@ namespace
         auto found = primitives.find(primitive);
         if (found == primitives.end()) return;
         const Box &b = found->second.box;
+        currentPrimitive = primitive;
         Drew(b.x1, b.y1, b.x2 - b.x1, b.y2 - b.y1, found->second.what);
+        currentPrimitive = nullptr;
     }
 
     void Remember(const void *primitive, float x, float y, float w, float h, const std::string &what)

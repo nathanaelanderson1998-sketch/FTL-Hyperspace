@@ -46,6 +46,7 @@ namespace
 
     bool inGuiRender = false;
     bool inCrewControlRender = false;
+    bool drawingStationPlate = false; // our enlarged stations plate, not FTL's own
     float zoom = 1.f;
     float panX = 0.f;
     float panY = 0.f;
@@ -217,20 +218,26 @@ namespace
             return value != nullptr ? (float)std::atof(value) : 0.f;
         }();
         float target = forced >= 1.f ? forced : 2.2f;
-        // Both panel rows fit under the player ship, with the world lifted as far as it may go.
+        // The panel row fits under the player ship, with the world lifted as far as it may go.
         float shipBottom = 360.f + MaxWorldLift(app) + BaseZoom(app) * (525.f - 360.f);
         float room = (float)ExtraY(app) + 720.f - shipBottom - 8.f;
-        float fitY = room / ((720.f - SUBSYSTEM_ROW_TOP) + (720.f - BOTTOM_BAND_TOP));
+        float fitY = room / (720.f - SUBSYSTEM_ROW_TOP);
         // No fit to the width: a ship with many systems scrolls its systems row instead of shrinking it.
         return (std::max)(1.f, (std::min)(target, fitY));
     }
 
-    float PanelHeight(CApp *app) { return BottomScale(app) * ((720.f - SUBSYSTEM_ROW_TOP) + (720.f - BOTTOM_BAND_TOP)); }
+    // One row along the bottom: the systems, then the subsystems (with the doors box and More Info), scrolled
+    // sideways when wider than the panel.
+    float PanelHeight(CApp *app) { return BottomScale(app) * (720.f - SUBSYSTEM_ROW_TOP); }
 
-    // Right edge of the whole panel if nothing were cut, in canvas x.
+    // Where the subsystems start in the row, in canvas x, before scrolling.
+    float SubsystemsLeft(CApp *app) { return -(float)ExtraX(app) + 4.f + BottomScale(app) * WeaponsLeft(app) + 10.f; }
+
+    // Right edge of the whole row if nothing were cut, in canvas x.
     float PanelNaturalRight(CApp *app)
     {
-        return -(float)ExtraX(app) + 4.f + BottomScale(app) * (std::max)(WeaponsLeft(app), 1280.f - BOTTOM_RIGHT_LEFT);
+        if (!TwoRowBottom(app)) return -(float)ExtraX(app) + 4.f + BottomScale(app) * (std::max)(WeaponsLeft(app), 1280.f - BOTTOM_RIGHT_LEFT);
+        return SubsystemsLeft(app) + BottomScale(app) * (1280.f - BOTTOM_RIGHT_LEFT);
     }
 
     // Right edge of the panel as shown, in canvas x: the weapons keep at least 1.3x to the right of it.
@@ -241,14 +248,13 @@ namespace
         return (std::min)(natural, 1280.f + (float)ExtraX(app) - 4.f - 12.f - 430.f * 1.3f);
     }
 
-    // The systems row scrolls sideways (a swipe across it) when it is wider than the panel. Canvas px, >= 0.
+    // The row scrolls sideways (a swipe across it) when it is wider than the panel. Canvas px, >= 0.
     float systemsScroll = 0.f;
 
     float MaxSystemsScroll(CApp *app)
     {
         if (!TwoRowBottom(app)) return 0.f;
-        float systemsRight = -(float)ExtraX(app) + 4.f + BottomScale(app) * WeaponsLeft(app);
-        return (std::max)(0.f, systemsRight + 6.f - PanelRight(app));
+        return (std::max)(0.f, PanelNaturalRight(app) + 6.f - PanelRight(app));
     }
 
     float SystemsScroll(CApp *app)
@@ -326,7 +332,7 @@ namespace
     float CrewLimit(CApp *app)
     {
         float b = BottomScale(app);
-        float rowBottom = 720.f + (float)ExtraY(app) - b * (720.f - SUBSYSTEM_ROW_TOP); // game y 720 of the systems row
+        float rowBottom = 720.f + (float)ExtraY(app); // game y 720 of the row: the canvas bottom
         int bars = (std::min)(ReactorBars(), REACTOR_ROOM);
         return rowBottom + b * (REACTOR_BOTTOM - REACTOR_BAR * (float)bars - 720.f) - 8.f;
     }
@@ -363,12 +369,12 @@ namespace
             return {0.f, CREW_PANEL_TOP, -ex, CrewTop(app), CrewScale(app)};
         case Region::BOTTOM_LEFT:
             if (!panel) return {0.f, 720.f, -ex, 720.f + ey, b};
-            // Systems: the upper row of the panel.
-            return {0.f, 720.f, -ex + 4.f - SystemsScroll(app), 720.f + ey - b * (720.f - SUBSYSTEM_ROW_TOP), b};
+            // Systems: the start of the bottom row.
+            return {0.f, 720.f, -ex + 4.f - SystemsScroll(app), 720.f + ey, b};
         case Region::BOTTOM_RIGHT:
         {
-            // Subsystems and More Info: the lower row of the panel.
-            if (panel) return {BOTTOM_RIGHT_LEFT, 720.f, -ex + 4.f, 720.f + ey, b};
+            // Subsystems and More Info: after the systems in the bottom row.
+            if (panel) return {BOTTOM_RIGHT_LEFT, 720.f, SubsystemsLeft(app) - SystemsScroll(app), 720.f + ey, b};
             float lift = BottomRightLifted(app) ? b * (720.f - BOTTOM_BAND_TOP + 10.f) : 0.f;
             return {1280.f, 720.f, 1280.f + ex, 720.f + ey - lift, b};
         }
@@ -672,12 +678,13 @@ namespace
             InverseMap(app, Region::WEAPONS, x, y, gx, gy);
             if (gy >= BOTTOM_BAND_TOP && gy < 720.f && gx >= wl - 8.f && gx < weaponsEnd) return Region::WEAPONS;
 
-            bool inPanel = x < PanelRight(app);
+            bool inPanel = x < PanelRight(app) && x >= -(float)ExtraX(app);
+            bool subsystems = x >= SubsystemsLeft(app) - SystemsScroll(app) - 5.f;
             InverseMap(app, Region::BOTTOM_RIGHT, x, y, gx, gy);
-            if (inPanel && gy >= SUBSYSTEM_ROW_TOP && gy < 720.f && gx >= BOTTOM_RIGHT_LEFT && gx < 1280.f) return Region::BOTTOM_RIGHT;
+            if (inPanel && subsystems && gy >= SUBSYSTEM_ROW_TOP && gy < 720.f && gx >= BOTTOM_RIGHT_LEFT && gx < 1280.f) return Region::BOTTOM_RIGHT;
 
             InverseMap(app, Region::BOTTOM_LEFT, x, y, gx, gy);
-            if (inPanel && gy >= BOTTOM_BAND_TOP && gy < 720.f)
+            if (inPanel && !subsystems && gy >= BOTTOM_BAND_TOP && gy < 720.f)
             {
                 // The weapons are no longer drawn right of the systems: nothing to hit there.
                 if (gx >= wl)
@@ -897,12 +904,30 @@ bool FoldLayoutPushTopLeftToBottomRight()
     ApplyInverse(app, Region::TOP_LEFT);
     ApplyTransform(app, Region::BOTTOM_RIGHT);
     activeRegion = Region::BOTTOM_RIGHT;
+    if (TwoRowBottom(app) && !app->useDirect3D)
+    {
+        // It scrolls with the subsystems: only inside the panel.
+        GLint left = (std::max)(0, (GLint)(app->modifier_x + SubsystemsLeft(app) - SystemsScroll(app)) - 5);
+        GLint right = (GLint)(app->modifier_x + PanelRight(app)) + 2;
+        glEnable(GL_SCISSOR_TEST);
+        glScissor(left, 0, (std::max)(0, right - left), app->screen_y);
+        clipActive = true;
+        clipX1 = (float)left;
+        clipX2 = (float)right;
+        clipY1 = 0.f;
+        clipY2 = (float)app->screen_y;
+    }
     return true;
 }
 
 void FoldLayoutPopMatrix()
 {
     CSurface::GL_PopMatrix();
+    if (clipActive)
+    {
+        glDisable(GL_SCISSOR_TEST);
+        clipActive = false;
+    }
     activeRegion = Region::TOP_LEFT;
 }
 
@@ -951,6 +976,15 @@ bool FoldLayoutToWindow(const std::string &region, float x, float y, int &window
                 dy += DOOR_FRAME_SHIFT_Y;
                 x = dx + DOOR_BUTTON_SCALE * (x - dx);
                 y = dy + DOOR_BUTTON_SCALE * (y - dy);
+            }
+            if (region == "row")
+            {
+                // A fraction of the way across the visible row (for swipes that must start on screen).
+                Anchor a = GetAnchor(app, Region::BOTTOM_LEFT);
+                float left = -(float)ExtraX(app) + 4.f;
+                windowX = (int)std::lround(left + x * (PanelRight(app) - left)) + app->modifier_x;
+                windowY = (int)std::lround(a.cy + a.s * (y - a.ay)) + app->modifier_y;
+                return true;
             }
             Region r = region == "tl" ? Region::TOP_LEFT : region == "bl" ? Region::BOTTOM_LEFT :
                        region == "br" || region == "door" ? Region::BOTTOM_RIGHT : region == "wp" ? Region::WEAPONS :
@@ -1367,28 +1401,27 @@ HOOK_METHOD_PRIORITY(SystemControl, OnRender, -10000, (bool front) -> void)
     glEnable(GL_SCISSOR_TEST);
     if (TwoRowBottom(app))
     {
-        // Panel: systems on top of subsystems. GL scissor y counts from the bottom of the window.
-        GLsizei panelRight = (GLsizei)(app->modifier_x + PanelRight(app)) + 2;
-        Anchor br = GetAnchor(app, Region::BOTTOM_RIGHT);
-        GLint split = app->screen_y - (GLint)(app->modifier_y + br.cy - br.s * (720.f - SUBSYSTEM_ROW_TOP));
-        Region saved = activeRegion;
+        // Panel: one row, systems then subsystems. GL scissor y counts from the bottom of the window.
+        GLint panelRight = (GLint)(app->modifier_x + PanelRight(app)) + 2;
         GLint panelLeft = (std::max)(0, (GLint)(app->modifier_x - ExtraX(app)));
-        // Nothing of the systems row above the crew list (a reactor taller than the room left for it).
+        GLint split = (std::max)(panelLeft, (std::min)(panelRight, (GLint)(app->modifier_x + SubsystemsLeft(app) - SystemsScroll(app)) - 5));
+        // Nothing of the row above the crew list (a reactor taller than the room left for it).
         GLint panelTop = (std::max)(0, (GLint)(app->modifier_y + CrewBottom(app)) + 4);
-        glScissor(panelLeft, split, panelRight - panelLeft, (std::max)(0, app->screen_y - split - panelTop));
+        GLsizei height = (std::max)(0, app->screen_y - panelTop);
+        Region saved = activeRegion;
         clipActive = true;
-        clipX1 = (float)panelLeft;
-        clipX2 = (float)panelRight;
         clipY1 = (float)panelTop;
-        clipY2 = (float)(app->screen_y - split);
+        clipY2 = (float)app->screen_y;
+        glScissor(panelLeft, 0, split - panelLeft, height);
+        clipX1 = (float)panelLeft;
+        clipX2 = (float)split;
         PushRegion(app, Region::BOTTOM_LEFT);
         activeRegion = Region::BOTTOM_LEFT;
         super(front);
         CSurface::GL_PopMatrix();
-        glScissor(0, 0, panelRight, split);
-        clipX1 = 0.f;
-        clipY1 = (float)(app->screen_y - split);
-        clipY2 = (float)app->screen_y;
+        glScissor(split, 0, panelRight - split, height);
+        clipX1 = (float)split;
+        clipX2 = (float)panelRight;
         PushRegion(app, Region::BOTTOM_RIGHT);
         activeRegion = Region::BOTTOM_RIGHT;
         super(front);
@@ -1396,18 +1429,17 @@ HOOK_METHOD_PRIORITY(SystemControl, OnRender, -10000, (bool front) -> void)
         clipActive = false;
         glDisable(GL_SCISSOR_TEST);
 
-        // A systems row wider than the panel: a scroll bar just under it, in the empty top of the subsystems row
-        // (canvas coordinates).
+        // A row wider than the panel: a scroll bar along the bottom edge (canvas coordinates).
         float maxScroll = MaxSystemsScroll(app);
         if (maxScroll > 0.f)
         {
             activeRegion = Region::BOTTOM_LEFT;
             float left = -(float)ExtraX(app) + 4.f, right = PanelRight(app);
-            float y = br.cy - br.s * (720.f - SUBSYSTEM_ROW_TOP) + 5.f;
+            float y = 720.f + (float)ExtraY(app) - 6.f;
             float track = right - left, visible = track * track / (track + maxScroll);
             float thumb = left + (track - visible) * (SystemsScroll(app) / maxScroll);
             CSurface::GL_DrawRect(left, y, track, 4.f, GL_Color(0.35f, 0.4f, 0.45f, 0.6f));
-            CSurface::GL_DrawRect(thumb, y - 1.f, visible, 6.f, GL_Color(0.85f, 0.9f, 0.95f, 0.95f));
+            CSurface::GL_DrawRect(thumb, y - 1.f, visible, 5.f, GL_Color(0.85f, 0.9f, 0.95f, 0.95f));
         }
         activeRegion = saved;
         return;
@@ -1565,12 +1597,47 @@ HOOK_METHOD_PRIORITY(Button, OnRender, -10000, () -> void)
         CSurface::GL_Scale(STATION_BUTTON_SCALE, STATION_BUTTON_SCALE, 1.f);
         CSurface::GL_Translate(-sx, -sy, 0.f);
         GL_Primitive *plate = this == &gui->crewControl.saveStations ? gui->crewControl.saveStationsBase : gui->crewControl.returnStationsBase;
+        drawingStationPlate = true;
         if (plate != nullptr) CSurface::GL_RenderPrimitive(plate);
+        drawingStationPlate = false;
         super();
         CSurface::GL_PopMatrix();
         return;
     }
     super();
+}
+
+// FTL draws the stations plates itself, at their original size, before the buttons. The buttons draw their own
+// enlarged plates (above), so the originals would show behind them: skip those.
+static bool SkipStationPlate(GL_Primitive *primitive)
+{
+    if (!inCrewControlRender || drawingStationPlate || primitive == nullptr) return false;
+    CApp *app = G_->GetCApp();
+    float sx, sy;
+    if (app == nullptr || app->gui == nullptr || !StationsAnchor(app, sx, sy)) return false;
+    const CrewControl &crew = app->gui->crewControl;
+    return primitive == crew.saveStationsBase || primitive == crew.returnStationsBase;
+}
+
+HOOK_STATIC_PRIORITY(CSurface, GL_RenderPrimitive, -10000, (GL_Primitive *primitive) -> void)
+{
+    LOG_HOOK("HOOK_STATIC_PRIORITY -> CSurface::GL_RenderPrimitive -> Begin (FoldLayout.cpp)\n")
+    if (SkipStationPlate(primitive)) return;
+    super(primitive);
+}
+
+HOOK_STATIC_PRIORITY(CSurface, GL_RenderPrimitiveWithAlpha, -10000, (GL_Primitive *primitive, float alpha) -> void)
+{
+    LOG_HOOK("HOOK_STATIC_PRIORITY -> CSurface::GL_RenderPrimitiveWithAlpha -> Begin (FoldLayout.cpp)\n")
+    if (SkipStationPlate(primitive)) return;
+    super(primitive, alpha);
+}
+
+HOOK_STATIC_PRIORITY(CSurface, GL_RenderPrimitiveWithColor, -10000, (GL_Primitive *primitive, GL_Color color) -> void)
+{
+    LOG_HOOK("HOOK_STATIC_PRIORITY -> CSurface::GL_RenderPrimitiveWithColor -> Begin (FoldLayout.cpp)\n")
+    if (SkipStationPlate(primitive)) return;
+    super(primitive, color);
 }
 
 HOOK_METHOD_PRIORITY(TextButton, OnRender, -10000, () -> void)
@@ -1834,7 +1901,8 @@ HOOK_METHOD_PRIORITY(CApp, OnLButtonDown, -10000, (int x, int y) -> void)
     int rawX = x, rawY = y;
     MapWindowPoint(this, x, y, true);
     pressRegion = lastRegion;
-    if (!replayingPress && lastRegion == Region::BOTTOM_LEFT && InGame(this) && !ModalOpen(gui) && MaxSystemsScroll(this) > 0.f)
+    if (!replayingPress && (lastRegion == Region::BOTTOM_LEFT || lastRegion == Region::BOTTOM_RIGHT) && InGame(this) && !ModalOpen(gui) &&
+        MaxSystemsScroll(this) > 0.f)
     {
         systemsPress = true;
         systemsSwiping = false;

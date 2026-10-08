@@ -299,7 +299,7 @@ namespace
             }
             return false;
         }
-        if (first == "tl" || first == "bl" || first == "br" || first == "wp" || first == "cr" || first == "dr" || first == "door" || first == "st" || first == "target" || first == "menu" ||
+        if (first == "tl" || first == "row" || first == "bl" || first == "br" || first == "wp" || first == "cr" || first == "dr" || first == "door" || first == "st" || first == "target" || first == "menu" ||
             first == "world" || first == "modal" || first == "none")
         {
             float gx = 0.f, gy = 0.f;
