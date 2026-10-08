@@ -55,6 +55,7 @@ namespace
     std::chrono::steady_clock::time_point startTime;
     std::deque<std::function<void(CApp *)>> frameQueue; // one entry runs per frame
     int passes = 0, failures = 0;
+    std::map<std::string, std::string> marked; // state saved by "mark": expect KEY=@ means unchanged since then
 
     void LoadScript()
     {
@@ -225,6 +226,11 @@ namespace
         if (op == std::string::npos) return false;
         std::string key = rule.substr(0, op);
         std::string want = rule.substr(op + (negate ? 2 : 1));
+        if (want == "@")
+        {
+            auto saved = marked.find(key);
+            want = saved == marked.end() ? "<missing>" : saved->second;
+        }
 
         auto state = GameState(app);
         auto found = state.find(key);
@@ -401,6 +407,7 @@ namespace
         }
         else if (cmd == "shot") pendingShot = step.rest;
         else if (cmd == "state") hs_log_file("Fold test: state %s\n", StateText(GameState(app)).c_str());
+        else if (cmd == "mark") marked = GameState(app);
         else if (cmd == "expect") Expect(app, step);
         else if (cmd == "require")
         {
