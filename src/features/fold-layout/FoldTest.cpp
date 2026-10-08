@@ -1,6 +1,8 @@
 #include "Global.h"
 #include "../../overrides/FileHelper.h"
 
+int TouchVolleySize(); // TapToMove.cpp: weapons selected besides the armed one
+
 #include <algorithm>
 
 #ifdef _WIN32
@@ -173,6 +175,19 @@ namespace
         }
         state["sel"] = std::to_string((int)gui->crewControl.selectedCrew.size());
         state["armed"] = std::to_string(gui->combatControl.weapControl.armedWeapon != nullptr ? gui->combatControl.weapControl.armedSlot : -1);
+        state["volley"] = std::to_string(TouchVolleySize());
+        {
+            int aimed = 0;
+            ShipManager *ship = gui->shipComplete != nullptr ? gui->shipComplete->shipManager : nullptr;
+            if (ship != nullptr && ship->weaponSystem != nullptr)
+            {
+                for (ProjectileFactory *weapon : ship->weaponSystem->weapons)
+                {
+                    if (weapon != nullptr && !weapon->targets.empty()) aimed++;
+                }
+            }
+            state["aimed"] = std::to_string(aimed);
+        }
 
         ShipManager *ship = gui->shipComplete != nullptr ? gui->shipComplete->shipManager : nullptr;
         if (ship == nullptr) return state;
@@ -389,6 +404,19 @@ namespace
             ReadPoint(in, x, y);
             in >> c;
             FoldLayoutWheel(app, x, y, (float)c);
+        }
+        else if (cmd == "settle")
+        {
+            // Whatever a jump landed on: answer an event's first choice, or close a store it opened. Nothing else.
+            SDLKey key = SDLK_UNKNOWN;
+            if (app->gui != nullptr && app->gui->choiceBox.bOpen) key = (SDLKey)49;
+            else if (app->gui != nullptr && app->gui->storeScreens.bOpen) key = SDLK_ESCAPE;
+            hs_log_file("Fold test: settle %s\n", key == SDLK_UNKNOWN ? "(nothing open)" : key == SDLK_ESCAPE ? "closes the store" : "answers 1");
+            if (key != SDLK_UNKNOWN)
+            {
+                app->OnKeyDown(key);
+                frameQueue.push_back([=](CApp *g) { g->OnKeyUp(key); });
+            }
         }
         else if (cmd == "key")
         {
