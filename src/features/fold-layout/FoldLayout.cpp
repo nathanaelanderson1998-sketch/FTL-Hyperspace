@@ -368,6 +368,7 @@ namespace
     };
 
     bool TargetAnchor(CApp *app, float &ax, float &ay, float &scale);
+    void ToCanvas(CApp *app, Region region, float x, float y, float &cx, float &cy);
     Anchor ChoiceAnchor(CApp *app);
 
     Anchor GetAnchor(CApp *app, Region region)
@@ -481,6 +482,12 @@ namespace
         ax = (float)(combat.position.x + combat.boxPosition.x + size.x);
         ay = (float)(combat.position.y + combat.boxPosition.y);
         scale = 1.2f;
+        // ...smaller if that would reach down over the weapons (or the drones above them) and their charge labels
+        // (about game y 545 of that group). The window's frame image ends ~20 px below its box.
+        float limitX, limitY;
+        ToCanvas(app, HasDrones(app) ? Region::DRONES : Region::WEAPONS, 0.f, 545.f, limitX, limitY);
+        float worldY = 360.f + (limitY - 28.f - 360.f - WY(app)) / WZ(app);
+        scale = (std::max)(0.8f, (std::min)(scale, (worldY - ay) / (float)size.y));
         return true;
     }
 

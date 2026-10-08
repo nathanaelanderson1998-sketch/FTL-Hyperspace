@@ -78,10 +78,12 @@ namespace
 
     Matrix &Top() { return stack.back(); }
 
-    // Frames checked so far, and the last frame each problem was seen in: only one seen in two frames running is
-    // reported (a single frame, e.g. a crew icon at 0,0 the frame a crew member is added, cannot be seen).
+    // Frames checked so far, and for each problem the last frame it was seen in and how many frames running: only
+    // one seen in PERSIST_FRAMES frames running is reported (a few frames, e.g. a crew icon at 0,0 the frame a crew
+    // member is added, or event reward icons at 0,0 while the event box opens, cannot be seen).
+    const int PERSIST_FRAMES = 4;
     int frameNumber = 0;
-    std::unordered_map<std::string, int> lastSeen;
+    std::unordered_map<std::string, int> lastSeen, runLength;
 
     void Report(const char *kind, const std::string &what)
     {
@@ -89,9 +91,10 @@ namespace
         if (reported.count(key) != 0) return;
         auto seen = lastSeen.find(key);
         if (seen != lastSeen.end() && seen->second == frameNumber) return;
-        bool persistent = seen != lastSeen.end() && seen->second == frameNumber - 1;
+        int run = seen != lastSeen.end() && seen->second == frameNumber - 1 ? runLength[key] + 1 : 1;
         lastSeen[key] = frameNumber;
-        if (!persistent) return;
+        runLength[key] = run;
+        if (run < PERSIST_FRAMES) return;
         reported.insert(key);
         (std::string(kind) == "OFFSCREEN" ? offscreenCount : overlapCount)++;
         hs_log_file("Fold check: %s %s\n", kind, what.c_str());
