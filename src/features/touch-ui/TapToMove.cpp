@@ -180,6 +180,8 @@ HOOK_METHOD(CombatControl, MouseClick, (int mX, int mY, bool shift) -> void)
             if (weapControl.armedWeapon == nullptr || weapControl.armedSlot != slot) weapControl.SelectArmament(slot);
             if (weapControl.armedWeapon == nullptr || weapControl.armedSlot != slot) continue; // could not arm it
             super(mX, mY, shift);
+            hs_log_file("Touch: selection aimed weapon %d (beam %d): targets %d, aiming points %d\n", slot, (int)IsBeam(weapon),
+                        (int)weapon->targets.size(), (int)aimingPoints.size());
             if (IsBeam(weapon))
             {
                 beamAimed = aimingPoints.size() == 1;
@@ -223,6 +225,7 @@ HOOK_METHOD(CombatControl, MouseUp, (int mX, int mY) -> void)
 {
     LOG_HOOK("HOOK_METHOD -> CombatControl::MouseUp -> Begin (TapToMove.cpp)\n")
     super(mX, mY);
+    if (beamDragPending) hs_log_file("Touch: beam drag release, aiming points %d\n", (int)aimingPoints.size());
     if (!beamDragPending) return;
     beamDragPending = false;
     int dx = mX - beamDragStart.x, dy = mY - beamDragStart.y;

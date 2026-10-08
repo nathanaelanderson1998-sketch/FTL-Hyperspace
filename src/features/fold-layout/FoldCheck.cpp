@@ -172,9 +172,13 @@ namespace
                 // One image drawn twice at different sizes (or in different groups), the copies overlapping: an
                 // enlarged copy with the original left showing behind it. (Repeated images at one size, like the glow
                 // on each power bar or the crew boxes, are stacked on purpose and may touch.)
+                // (A tall image FTL reveals part of, drawn twice at different heights, like the reactor bars: same
+                // left, right and top.)
+                bool partialReveal = std::abs(a.box.x1 - b.box.x1) <= 2.f && std::abs(a.box.x2 - b.box.x2) <= 2.f &&
+                                     (std::abs(a.box.y1 - b.box.y1) <= 2.f || std::abs(a.box.y2 - b.box.y2) <= 2.f);
                 bool sameSize = std::abs((a.box.x2 - a.box.x1) - (b.box.x2 - b.box.x1)) <= 2.f && std::abs((a.box.y2 - a.box.y1) - (b.box.y2 - b.box.y1)) <= 2.f;
                 if (a.primitive != nullptr && a.primitive == b.primitive && Hud(a.region) && Hud(b.region) && Overlap(a.box, b.box) > 0.f &&
-                    (!sameSize || a.region != b.region) &&
+                    (!sameSize || a.region != b.region) && !partialReveal &&
                     (std::abs(a.box.x1 - b.box.x1) > 2.f || std::abs(a.box.y1 - b.box.y1) > 2.f || std::abs(a.box.x2 - b.box.x2) > 2.f))
                 {
                     auto snapd = [](const Box &x) { return Box{(float)((int)x.x1 / 16 * 16), (float)((int)x.y1 / 16 * 16), (float)((int)x.x2 / 16 * 16), (float)((int)x.y2 / 16 * 16)}; };
