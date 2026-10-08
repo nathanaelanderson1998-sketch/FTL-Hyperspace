@@ -1,4 +1,5 @@
 #include "Global.h"
+#include "../../overrides/FileHelper.h"
 
 #include <algorithm>
 
@@ -390,7 +391,8 @@ namespace
         }
         else if (cmd == "cmd")
         {
-            if (app->gui != nullptr)
+            // Only in a run: console commands on the main menu can crash the game.
+            if (app->gui != nullptr && !app->menu.bOpen)
             {
                 std::string command = step.rest;
                 app->gui->RunCommand(command);
@@ -445,6 +447,22 @@ HOOK_STATIC_PRIORITY(CSurface, FinishFrame, -9000, () -> void)
     {
         WriteShot(pendingShot, app->screen_x, app->screen_y);
         pendingShot.clear();
+    }
+    super();
+}
+
+// Test runs keep their own profile (FTL_FOLD_TEST_SAVES, a folder the test script fills): the player's saves are
+// never written, and a protected Documents folder (Windows' Controlled folder access) does not stop the game.
+HOOK_STATIC_PRIORITY(FileHelper, initFileHelper, -10000, () -> void)
+{
+    LOG_HOOK("HOOK_STATIC_PRIORITY -> FileHelper::initFileHelper -> Begin (FoldTest.cpp)\n")
+    const char *folder = std::getenv("FTL_FOLD_TEST_SAVES");
+    if (folder != nullptr && folder[0] != 0 && std::getenv("FTL_FOLD_TEST") != nullptr)
+    {
+        std::string path = folder;
+        if (path.back() != '\\' && path.back() != '/') path += '\\';
+        FileHelperExtension::setUserFolder(path);
+        hs_log_file("Fold test: saves in %s\n", path.c_str());
     }
     super();
 }
