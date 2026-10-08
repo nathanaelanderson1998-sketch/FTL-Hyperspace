@@ -405,6 +405,16 @@ namespace
             in >> c;
             FoldLayoutWheel(app, x, y, (float)c);
         }
+        else if (cmd == "pause")
+        {
+            // "pause 1" / "pause 0": Space only if the game is not already in that state.
+            in >> a;
+            if (app->gui != nullptr && (int)app->gui->bPaused != a)
+            {
+                app->OnKeyDown(SDLK_SPACE);
+                frameQueue.push_back([](CApp *g) { g->OnKeyUp(SDLK_SPACE); });
+            }
+        }
         else if (cmd == "settle")
         {
             // Whatever a jump landed on: answer an event's first choice, or close a store it opened. Nothing else.
