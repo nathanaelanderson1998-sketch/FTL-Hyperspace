@@ -78,32 +78,47 @@ static bool IsBeam(ProjectileFactory *weapon)
 // For the test harness: how many weapons are selected besides the armed one.
 int TouchVolleySize() { return (int)volley.size(); }
 
+// After FTL handled a tap on the weapons (it may arm on the press or on the release): if it switched from the armed
+// weapon to another, keep the armed one and add the other to the selection (or drop it, if it was selected); if it
+// disarmed the armed one, the next selected one takes over.
+static void FollowWeaponTap(WeaponControl *control, int before)
+{
+    if (!TapToMoveEnabled() || before == -1) return;
+    int after = control->armedWeapon != nullptr ? control->armedSlot : -1;
+    if (after == before) return;
+    if (after == -1)
+    {
+        if (!volley.empty())
+        {
+            int next = volley.back();
+            volley.pop_back();
+            control->SelectArmament(next);
+        }
+        return;
+    }
+    auto selected = std::find(volley.begin(), volley.end(), after);
+    if (selected != volley.end()) volley.erase(selected);
+    else volley.push_back(after);
+    control->SelectArmament(before);
+}
+
 HOOK_METHOD_PRIORITY(WeaponControl, LButton, -100, (int x, int y, bool holdingShift) -> bool)
 {
     LOG_HOOK("HOOK_METHOD_PRIORITY -> WeaponControl::LButton -> Begin (TapToMove.cpp)\n")
     int before = armedWeapon != nullptr ? armedSlot : -1;
     bool ret = super(x, y, holdingShift);
-    if (!TapToMoveEnabled() || before == -1) return ret;
-    int after = armedWeapon != nullptr ? armedSlot : -1;
-    if (after == -1)
-    {
-        // The armed weapon itself was tapped (FTL disarms it): the next selected one takes over.
-        if (!volley.empty())
-        {
-            int next = volley.back();
-            volley.pop_back();
-            SelectArmament(next);
-        }
-        return ret;
-    }
-    if (after != before)
-    {
-        // FTL switched to the tapped weapon: keep the armed one, and add the tapped one (or drop it if selected).
-        auto selected = std::find(volley.begin(), volley.end(), after);
-        if (selected != volley.end()) volley.erase(selected);
-        else volley.push_back(after);
-        SelectArmament(before);
-    }
+    FollowWeaponTap(this, before);
+    return ret;
+}
+
+HOOK_METHOD_PRIORITY(ArmamentControl, LButtonUp, -100, (int mX, int mY, bool shift) -> bool)
+{
+    LOG_HOOK("HOOK_METHOD_PRIORITY -> ArmamentControl::LButtonUp -> Begin (TapToMove.cpp)\n")
+    if (systemId != 3) return super(mX, mY, shift); // weapons only
+    WeaponControl *control = (WeaponControl *)this;
+    int before = control->armedWeapon != nullptr ? control->armedSlot : -1;
+    bool ret = super(mX, mY, shift);
+    FollowWeaponTap(control, before);
     return ret;
 }
 
