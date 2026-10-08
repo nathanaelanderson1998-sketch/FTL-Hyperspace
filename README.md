@@ -1,3 +1,7 @@
+> **This is the `touch-ui` branch:** Hyperspace with a full-screen, touch-first layout for foldables and tablets
+> (played on a Galaxy Z Fold through Winlator). See **[FOLD-TOUCH.md](FOLD-TOUCH.md)** for what it does and how to
+> install it on your own copy of FTL.
+
 <a href="https://ftl-hyperspace.github.io/FTL-Hyperspace/en/"><img src=".github/hs-bg.png" alt="FTL: Hyperspace" width="100%"></a>
 
 [![Stars](https://img.shields.io/github/stars/FTL-Hyperspace/FTL-Hyperspace?style=for-the-badge&logo=github&logoColor=A866FF&label=STARS&labelColor=090B16&color=A866FF)](https://github.com/FTL-Hyperspace/FTL-Hyperspace/stargazers)
