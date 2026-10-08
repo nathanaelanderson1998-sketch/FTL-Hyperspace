@@ -411,7 +411,8 @@ namespace
             SDLKey key = SDLK_UNKNOWN;
             if (app->gui != nullptr && app->gui->choiceBox.bOpen) key = (SDLKey)49;
             else if (app->gui != nullptr && app->gui->storeScreens.bOpen) key = SDLK_ESCAPE;
-            hs_log_file("Fold test: settle %s\n", key == SDLK_UNKNOWN ? "(nothing open)" : key == SDLK_ESCAPE ? "closes the store" : "answers 1");
+            else if (app->gui != nullptr && app->gui->starMap != nullptr && app->gui->starMap->bOpen) key = SDLK_ESCAPE; // a jump tap that missed
+            hs_log_file("Fold test: settle %s\n", key == SDLK_UNKNOWN ? "(nothing open)" : key == SDLK_ESCAPE ? "closes the store / star map" : "answers 1");
             if (key != SDLK_UNKNOWN)
             {
                 app->OnKeyDown(key);
