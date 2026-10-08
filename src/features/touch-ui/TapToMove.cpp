@@ -122,6 +122,20 @@ HOOK_METHOD_PRIORITY(ArmamentControl, LButtonUp, -100, (int mX, int mY, bool shi
     return ret;
 }
 
+// A selected (lit) weapon tapped again: FTL deselects it, as if it were the armed one; drop it from the selection.
+HOOK_METHOD_PRIORITY(WeaponControl, DeselectArmament, -100, (unsigned int i) -> void)
+{
+    LOG_HOOK("HOOK_METHOD_PRIORITY -> WeaponControl::DeselectArmament -> Begin (TapToMove.cpp)\n")
+    auto selected = std::find(volley.begin(), volley.end(), (int)i);
+    if (selected != volley.end() && !(armedWeapon != nullptr && armedSlot == (int)i))
+    {
+        volley.erase(selected);
+        if (i < boxes.size() && boxes[i] != nullptr) boxes[i]->selected = false;
+        return;
+    }
+    super(i);
+}
+
 HOOK_METHOD_PRIORITY(WeaponControl, OnLoop, -100, () -> void)
 {
     LOG_HOOK("HOOK_METHOD_PRIORITY -> WeaponControl::OnLoop -> Begin (TapToMove.cpp)\n")
