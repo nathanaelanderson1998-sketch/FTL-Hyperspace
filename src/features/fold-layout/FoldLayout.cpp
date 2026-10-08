@@ -1467,8 +1467,11 @@ HOOK_METHOD_PRIORITY(DoorBox, OnRender, -10000, (bool ignoreStatus) -> void)
     }
     else
     {
-        // Everything but the buttons (the doors icon and its power stay with the subsystems).
-        float x2 = (std::min)(sx2, wx1);
+        // Everything but the buttons (the doors icon and its power stay with the subsystems): cut exactly at the
+        // buttons' left edge (DoorButtons pads it by 5, which would cut off the icon's rim).
+        float edgeX, edgeY;
+        ToCanvas(app, activeRegion, bx1 + 5.f, by1 + DOOR_FRAME_SHIFT_Y, edgeX, edgeY);
+        float x2 = (std::min)(sx2, edgeX + app->modifier_x);
         if (x2 > sx1)
         {
             glScissor(saved[0], saved[1], (GLsizei)(x2 - sx1), saved[3]);
