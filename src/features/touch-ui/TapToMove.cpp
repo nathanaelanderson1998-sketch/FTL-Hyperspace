@@ -81,31 +81,30 @@ int TouchVolleySize() { return (int)volley.size(); }
 HOOK_METHOD_PRIORITY(WeaponControl, LButton, -100, (int x, int y, bool holdingShift) -> bool)
 {
     LOG_HOOK("HOOK_METHOD_PRIORITY -> WeaponControl::LButton -> Begin (TapToMove.cpp)\n")
-    if (!TapToMoveEnabled() || armedWeapon == nullptr) return super(x, y, holdingShift);
-    int hover = -1;
-    for (int i = 0; i < (int)boxes.size(); i++)
+    int before = armedWeapon != nullptr ? armedSlot : -1;
+    bool ret = super(x, y, holdingShift);
+    if (!TapToMoveEnabled() || before == -1) return ret;
+    int after = armedWeapon != nullptr ? armedSlot : -1;
+    if (after == -1)
     {
-        if (boxes[i] != nullptr && boxes[i]->mouseHover) hover = i;
+        // The armed weapon itself was tapped (FTL disarms it): the next selected one takes over.
+        if (!volley.empty())
+        {
+            int next = volley.back();
+            volley.pop_back();
+            SelectArmament(next);
+        }
+        return ret;
     }
-    if (hover < 0) return super(x, y, holdingShift);
-    auto selected = std::find(volley.begin(), volley.end(), hover);
-    if (selected != volley.end())
+    if (after != before)
     {
-        volley.erase(selected);
-        return true;
+        // FTL switched to the tapped weapon: keep the armed one, and add the tapped one (or drop it if selected).
+        auto selected = std::find(volley.begin(), volley.end(), after);
+        if (selected != volley.end()) volley.erase(selected);
+        else volley.push_back(after);
+        SelectArmament(before);
     }
-    if (hover == armedSlot)
-    {
-        if (volley.empty()) return super(x, y, holdingShift); // FTL: disarm
-        int next = volley.back();
-        volley.pop_back();
-        SelectArmament(next);
-        return true;
-    }
-    ProjectileFactory *weapon = SlotWeapon(this, hover);
-    if (weapon == nullptr || !weapon->powered) return super(x, y, holdingShift);
-    volley.push_back(hover);
-    return true;
+    return ret;
 }
 
 HOOK_METHOD_PRIORITY(WeaponControl, OnLoop, -100, () -> void)

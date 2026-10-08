@@ -1228,14 +1228,28 @@ namespace
     {
         float right = 1280.f + (float)ExtraX(app) - 8.f - (1 - index) * (TOUCH_BUTTON_W + TOUCH_BUTTON_GAP);
         float top = -(float)ExtraY(app) + 8.f;
-        // Right of the wrench, the last of the top bar's buttons (a store beacon adds one and pushes it right).
+        // Right of the top bar's buttons and their labels (a store beacon adds one and pushes the rest right); if
+        // they leave no room, just below the top bar, still in the corner.
         float width = TOUCH_BUTTON_W;
-        if (app->gui != nullptr && app->gui->optionsButton.hitbox.w > 0)
+        if (app->gui != nullptr)
         {
-            const Globals::Rect &o = app->gui->optionsButton.hitbox;
-            float wrenchRight, wrenchY;
-            ToCanvas(app, Region::TOP_LEFT, (float)(o.x + o.w), (float)o.y, wrenchRight, wrenchY);
-            width = (std::max)(TOUCH_BUTTON_MIN_W, (std::min)(TOUCH_BUTTON_W, right - wrenchRight - TOUCH_BUTTON_GAP));
+            CommandGui *gui = app->gui;
+            const Globals::Rect *buttons[] = {&gui->ftlButton.hitbox, &gui->upgradeButton.hitbox, &gui->storeButton.hitbox, &gui->optionsButton.hitbox};
+            float barRight = 0.f, barBottom = 0.f;
+            for (const Globals::Rect *b : buttons)
+            {
+                if (b->w <= 0 || b->x > 1280) continue;
+                barRight = (std::max)(barRight, (float)(b->x + b->w) + 30.f); // + labels drawn past the hitbox
+                barBottom = (std::max)(barBottom, (float)(b->y + b->h) + 30.f);
+            }
+            float barRightX, barBottomY;
+            ToCanvas(app, Region::TOP_LEFT, barRight, barBottom, barRightX, barBottomY);
+            width = (std::min)(TOUCH_BUTTON_W, right - barRightX - TOUCH_BUTTON_GAP);
+            if (width < TOUCH_BUTTON_MIN_W)
+            {
+                width = TOUCH_BUTTON_W;
+                top = barBottomY + TOUCH_BUTTON_GAP;
+            }
         }
         return Globals::Rect({(int)(right - width), (int)top, (int)width, (int)TOUCH_BUTTON_H});
     }
