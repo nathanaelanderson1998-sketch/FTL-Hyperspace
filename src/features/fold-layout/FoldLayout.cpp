@@ -486,7 +486,7 @@ namespace
         if (TouchButtonsShown(app))
         {
             // World y just above the buttons (the window is drawn in the world, then scaled about its top right).
-            float buttonsTop = (float)TouchButtonRect(app, 0).y - 8.f;
+            float buttonsTop = (float)TouchButtonRect(app, 1).y - 28.f; // its frame image reaches ~20 px below the box
             float worldY = 360.f + (buttonsTop - 360.f - WY(app)) / WZ(app);
             scale = (std::max)(0.8f, (std::min)(scale, (worldY - ay) / (float)size.y));
         }
