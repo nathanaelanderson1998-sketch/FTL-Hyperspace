@@ -237,7 +237,7 @@ namespace
 
     // The doors box's open/close-all buttons sit in a slot this wide (game px) at the left end of the row, so they
     // show without scrolling; the systems start after it.
-    const float DOOR_SLOT = 36.f;
+    const float DOOR_SLOT = 46.f;
     float DoorSlot(CApp *app) { return TwoRowBottom(app) ? DOOR_SLOT : 0.f; }
 
     // Canvas px from the end of the systems to the subsystems; the cut between them is SEAM_CUT px left of the
@@ -418,16 +418,18 @@ namespace
     DoorBox *lastDoorBox = nullptr;
     const float DOOR_FRAME_SHIFT_Y = 382.f; // measured: box frame y + this = game y (for the test harness)
 
-    // The open/close-all buttons of the doors box, in its own frame (x = game x; y + DOOR_FRAME_SHIFT_Y = game y).
+    // The open/close-all buttons of the doors box with their frame image (40x79 at buttonOffset; the buttons'
+    // hitboxes are inside it), in the box's own frame (x = game x; y + DOOR_FRAME_SHIFT_Y = game y).
+    const float DOOR_FRAME_W = 40.f, DOOR_FRAME_H = 79.f;
     bool DoorButtons(DoorBox *box, float &x1, float &y1, float &x2, float &y2)
     {
         if (box == nullptr) return false;
         const Globals::Rect &o = box->openDoors.hitbox, &c = box->closeDoors.hitbox;
-        x1 = (float)(box->buttonOffset.x + (std::min)(o.x, c.x)) - 5.f;
-        x2 = (float)(box->buttonOffset.x + (std::max)(o.x + o.w, c.x + c.w)) + 5.f;
-        y1 = (float)(box->buttonOffset.y + (std::min)(o.y, c.y)) - 5.f;
-        y2 = (float)(box->buttonOffset.y + (std::max)(o.y + o.h, c.y + c.h)) + 5.f;
-        return x2 > x1 && y2 > y1 && x1 >= BOTTOM_RIGHT_LEFT && x1 < 1280.f;
+        x1 = (float)box->buttonOffset.x;
+        y1 = (float)box->buttonOffset.y;
+        x2 = (std::max)(x1 + DOOR_FRAME_W, (float)(box->buttonOffset.x + (std::max)(o.x + o.w, c.x + c.w)));
+        y2 = (std::max)(y1 + DOOR_FRAME_H, (float)(box->buttonOffset.y + (std::max)(o.y + o.h, c.y + c.h)));
+        return x1 >= BOTTOM_RIGHT_LEFT && x1 < 1280.f;
     }
 
     // How far (game x) the buttons move: from among the subsystems to the slot at the left of the systems
@@ -1467,20 +1469,13 @@ HOOK_METHOD_PRIORITY(DoorBox, OnRender, -10000, (bool ignoreStatus) -> void)
     }
     else
     {
-        // Everything but the buttons (the doors icon and its power stay with the subsystems): cut exactly at the
-        // buttons' left edge (DoorButtons pads it by 5, which would cut off the icon's rim).
-        float edgeX, edgeY;
-        ToCanvas(app, activeRegion, bx1 + 5.f, by1 + DOOR_FRAME_SHIFT_Y, edgeX, edgeY);
-        float x2 = (std::min)(sx2, edgeX + app->modifier_x);
-        if (x2 > sx1)
-        {
-            glScissor(saved[0], saved[1], (GLsizei)(x2 - sx1), saved[3]);
-            clipX2 = x2;
-            float savedSeam = clipSeam;
-            clipSeam = x2; // for the checker: nothing of the doors icon may be cut here
-            super(ignoreStatus);
-            clipSeam = savedSeam;
-        }
+        // Everything but the buttons and their frame (the doors icon and its power stay with the subsystems): no cut
+        // can separate them (the icon's glow reaches under the frame), so the buttons are moved far out of the
+        // clipped area while the box draws.
+        Point savedOffset = buttonOffset;
+        buttonOffset.x += 4000;
+        super(ignoreStatus);
+        buttonOffset = savedOffset;
     }
     glScissor(saved[0], saved[1], saved[2], saved[3]);
     clipX1 = savedClip[0]; clipY1 = savedClip[1]; clipX2 = savedClip[2]; clipY2 = savedClip[3];
