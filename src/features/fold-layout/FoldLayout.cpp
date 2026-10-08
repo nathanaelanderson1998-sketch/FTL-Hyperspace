@@ -1476,7 +1476,10 @@ HOOK_METHOD_PRIORITY(DoorBox, OnRender, -10000, (bool ignoreStatus) -> void)
         {
             glScissor(saved[0], saved[1], (GLsizei)(x2 - sx1), saved[3]);
             clipX2 = x2;
+            float savedSeam = clipSeam;
+            clipSeam = x2; // for the checker: nothing of the doors icon may be cut here
             super(ignoreStatus);
+            clipSeam = savedSeam;
         }
     }
     glScissor(saved[0], saved[1], saved[2], saved[3]);
