@@ -233,9 +233,9 @@ namespace
     // Where the subsystems start in the row, in canvas x, before scrolling.
     // The systems end a little right of where FTL starts the weapon boxes: the last system box (and the end of its
     // frame) reaches about 20 game px past that.
-    float SystemsEnd(CApp *app) { return WeaponsLeft(app) + 26.f; }
+    float SystemsEnd(CApp *app) { return WeaponsLeft(app) + 36.f; }
 
-    float SubsystemsLeft(CApp *app) { return -(float)ExtraX(app) + 4.f + BottomScale(app) * SystemsEnd(app) + 10.f; }
+    float SubsystemsLeft(CApp *app) { return -(float)ExtraX(app) + 4.f + BottomScale(app) * SystemsEnd(app) + 24.f; }
 
     // Right edge of the whole row if nothing were cut, in canvas x.
     float PanelNaturalRight(CApp *app)
@@ -314,7 +314,7 @@ namespace
         float sx, sy;
         if (!StationsAnchor(app, sx, sy)) return CREW_PANEL_TOP + 30.f * 3.f + 50.f;
         CrewControl &crew = app->gui->crewControl;
-        float bottom = (float)(std::max)(crew.saveStations.hitbox.y + crew.saveStations.hitbox.h, crew.returnStations.hitbox.y + crew.returnStations.hitbox.h) + 4.f;
+        float bottom = (float)(std::max)(crew.saveStations.hitbox.y + crew.saveStations.hitbox.h, crew.returnStations.hitbox.y + crew.returnStations.hitbox.h) + 12.f;
         return sy + STATION_BUTTON_SCALE * (bottom - sy);
     }
 
@@ -691,7 +691,7 @@ namespace
             if (inPanel && !subsystems && gy >= BOTTOM_BAND_TOP && gy < 720.f)
             {
                 // The weapons are no longer drawn right of the systems: nothing to hit there.
-                if (gx >= SystemsEnd(app))
+                if (gx >= SystemsEnd(app) - 10.f)
                 {
                     gx = -10000.f;
                     gy = -10000.f;

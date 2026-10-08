@@ -215,14 +215,14 @@ namespace
         return text;
     }
 
-    void Expect(CApp *app, const Step &step)
+    bool Expect(CApp *app, const Step &step)
     {
         std::string rule = step.rest;
         bool negate = false;
         size_t op = rule.find("!=");
         if (op != std::string::npos) negate = true;
         else op = rule.find('=');
-        if (op == std::string::npos) return;
+        if (op == std::string::npos) return false;
         std::string key = rule.substr(0, op);
         std::string want = rule.substr(op + (negate ? 2 : 1));
 
@@ -233,6 +233,7 @@ namespace
         (ok ? passes : failures)++;
         hs_log_file("Fold test: %s %.1f expect %s (have %s)\n", ok ? "PASS" : "FAIL", step.time, rule.c_str(), have.c_str());
         if (!ok) hs_log_file("Fold test:   state: %s\n", StateText(state).c_str());
+        return ok;
     }
 
     // A point is either window pixels ("x y") or a game point in a layout region ("bl 300 638"), placed where
@@ -401,6 +402,16 @@ namespace
         else if (cmd == "shot") pendingShot = step.rest;
         else if (cmd == "state") hs_log_file("Fold test: state %s\n", StateText(GameState(app)).c_str());
         else if (cmd == "expect") Expect(app, step);
+        else if (cmd == "require")
+        {
+            // Like expect, but the rest of the script cannot mean anything without it (e.g. the run never started).
+            if (!Expect(app, step))
+            {
+                hs_log_file("Fold test: ABORT %.1f required %s not met\n", step.time, step.rest.c_str());
+                hs_log_file("Fold test: DONE %d passed, %d failed\n", passes, failures);
+                std::exit(1);
+            }
+        }
         else if (cmd == "quit")
         {
             hs_log_file("Fold test: DONE %d passed, %d failed\n", passes, failures);
